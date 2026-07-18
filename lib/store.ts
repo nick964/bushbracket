@@ -10,9 +10,13 @@ import type { Decided, Submission } from "./logic";
 export interface Store {
   getResults(): Promise<Decided>;
   setResults(results: Decided): Promise<void>;
+  /** Admin-set lock, independent of whether any results exist. */
+  getManualLock(): Promise<boolean>;
+  setManualLock(locked: boolean): Promise<void>;
   getSubmissions(): Promise<Submission[]>;
   /** Returns false if a submission with this id already exists. */
   addSubmission(id: string, sub: Submission): Promise<boolean>;
+  deleteSubmission(id: string): Promise<void>;
 }
 
 function hasFirebaseEnv(): boolean {
@@ -50,7 +54,20 @@ const firestoreStore: Store = {
   },
   async setResults(results) {
     const db = await firestoreDb();
-    await db.doc("bracket/state").set({ results, updatedAt: Date.now() });
+    await db
+      .doc("bracket/state")
+      .set({ results, updatedAt: Date.now() }, { merge: true });
+  },
+  async getManualLock() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/state").get();
+    return Boolean(snap.data()?.lockedManually);
+  },
+  async setManualLock(locked) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/state")
+      .set({ lockedManually: locked, updatedAt: Date.now() }, { merge: true });
   },
   async getSubmissions() {
     const db = await firestoreDb();
@@ -70,6 +87,10 @@ const firestoreStore: Store = {
       throw err;
     }
   },
+  async deleteSubmission(id) {
+    const db = await firestoreDb();
+    await db.collection("submissions").doc(id).delete();
+  },
 };
 
 // ---------- Local file fallback ----------
@@ -79,6 +100,7 @@ const DB_PATH = path.join(process.cwd(), ".data", "db.json");
 interface FileDb {
   results: Decided;
   submissions: Record<string, Submission>;
+  lockedManually?: boolean;
 }
 
 async function readFileDb(): Promise<FileDb> {
@@ -103,6 +125,14 @@ const fileStore: Store = {
     db.results = results;
     await writeFileDb(db);
   },
+  async getManualLock() {
+    return Boolean((await readFileDb()).lockedManually);
+  },
+  async setManualLock(locked) {
+    const db = await readFileDb();
+    db.lockedManually = locked;
+    await writeFileDb(db);
+  },
   async getSubmissions() {
     return Object.values((await readFileDb()).submissions);
   },
@@ -112,6 +142,11 @@ const fileStore: Store = {
     db.submissions[id] = sub;
     await writeFileDb(db);
     return true;
+  },
+  async deleteSubmission(id) {
+    const db = await readFileDb();
+    delete db.submissions[id];
+    await writeFileDb(db);
   },
 };
 

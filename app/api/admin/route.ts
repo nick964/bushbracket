@@ -1,5 +1,6 @@
 import { PREDICTABLE_GAMES, type GameId, type TeamId } from "@/lib/bracket";
 import {
+  normalizeName,
   predictableOnly,
   pruneDecided,
   resolveParticipants,
@@ -10,9 +11,10 @@ export const dynamic = "force-dynamic";
 
 interface AdminBody {
   password?: string;
-  action?: "login" | "set" | "clear";
+  action?: "login" | "set" | "clear" | "entries" | "delete-entry" | "lock" | "unlock";
   gameId?: string;
   winner?: string;
+  name?: string;
 }
 
 export async function POST(request: Request) {
@@ -36,6 +38,28 @@ export async function POST(request: Request) {
   }
 
   if (body.action === "login") {
+    return Response.json({ ok: true });
+  }
+
+  // Full submissions (including picks) regardless of lock state — admin only
+  if (body.action === "entries") {
+    const submissions = await getStore().getSubmissions();
+    submissions.sort((a, b) => a.createdAt - b.createdAt);
+    return Response.json({ ok: true, submissions });
+  }
+
+  if (body.action === "lock" || body.action === "unlock") {
+    const manualLock = body.action === "lock";
+    await getStore().setManualLock(manualLock);
+    return Response.json({ ok: true, manualLock });
+  }
+
+  if (body.action === "delete-entry") {
+    const id = normalizeName(body.name ?? "");
+    if (!id) {
+      return Response.json({ error: "Unknown entry" }, { status: 400 });
+    }
+    await getStore().deleteSubmission(id);
     return Response.json({ ok: true });
   }
 

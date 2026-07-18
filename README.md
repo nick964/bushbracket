@@ -14,7 +14,11 @@ locks picks, auto-scores everyone, and shows a live leaderboard.
   correct/incorrect picks marked.
 - **`/admin`** — password-protected. Click the real winner of each game;
   winners advance automatically. `undo` on any game clears it plus anything
-  downstream that depended on it.
+  downstream that depended on it. You can also lock/unlock submissions
+  manually before any result is entered, and view or delete submitted
+  entries.
+- **`/scoreboard`** — standalone leaderboard page (linked from the header)
+  that auto-refreshes during the event.
 - **Scoring** — LB Round 1 = 1 pt, UB Semis / LB Quarters = 2, LB Semi = 3,
   UB Final / LB Final = 4, Grand Final = 8. Max 29. The leaderboard shows each
   player's current score and their max possible score given results so far.

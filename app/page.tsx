@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import BracketView from "@/components/BracketView";
-import Leaderboard from "@/components/Leaderboard";
+import ScoreboardPanel from "@/components/ScoreboardPanel";
 import { PREDICTABLE_GAMES, TEAMS, type GameId, type TeamId } from "@/lib/bracket";
 import {
-  computeLeaderboard,
   normalizeName,
   predictableOnly,
   pruneDecided,
@@ -47,9 +47,17 @@ export default function Home() {
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-3 py-6 sm:px-6">
       <header className="mb-6">
-        <h1 className="font-display text-3xl font-bold uppercase tracking-tight text-zinc-100 sm:text-4xl">
-          CDL Challengers <span className="text-orange-500">Vegas</span>
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="font-display text-3xl font-bold uppercase tracking-tight text-zinc-100 sm:text-4xl">
+            CDL Challengers <span className="text-orange-500">Vegas</span>
+          </h1>
+          <Link
+            href="/scoreboard"
+            className="mt-1 shrink-0 rounded border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-orange-400 transition-colors hover:bg-orange-500/20"
+          >
+            Scoreboard →
+          </Link>
+        </div>
         <p className="mt-0.5 font-display text-lg font-semibold uppercase tracking-widest text-zinc-400">
           Bracket Guesser
         </p>
@@ -236,14 +244,6 @@ function LockedView({ state }: { state: AppState }) {
     () => state.submissions.filter((s): s is Submission => "picks" in s),
     [state.submissions]
   );
-  const rows = useMemo(
-    () => computeLeaderboard(submissions, state.results),
-    [submissions, state.results]
-  );
-  const [view, setView] = useState<string>("__results__");
-
-  const selectedSub = submissions.find((s) => s.name === view);
-  const actual = pruneDecided(state.results);
 
   return (
     <div>
@@ -255,42 +255,7 @@ function LockedView({ state }: { state: AppState }) {
           Scores update as results come in. Tap a player to see their bracket.
         </p>
       </div>
-
-      <h2 className="mb-3 font-display text-xl font-bold uppercase tracking-wide text-zinc-200">
-        Leaderboard
-      </h2>
-      <Leaderboard
-        rows={rows}
-        selected={selectedSub?.name}
-        onSelect={(n) => setView(n)}
-      />
-
-      <div className="mt-6 mb-3 flex flex-wrap items-center gap-2">
-        <h2 className="font-display text-xl font-bold uppercase tracking-wide text-zinc-200">
-          {selectedSub ? `${selectedSub.name}'s bracket` : "Live results"}
-        </h2>
-        <select
-          value={view}
-          onChange={(e) => setView(e.target.value)}
-          className="ml-auto rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-200 outline-none focus:border-orange-500"
-        >
-          <option value="__results__">Live results</option>
-          {submissions.map((s) => (
-            <option key={s.name} value={s.name}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {selectedSub ? (
-        <BracketView
-          decided={pruneDecided(selectedSub.picks)}
-          compare={actual}
-        />
-      ) : (
-        <BracketView decided={actual} />
-      )}
+      <ScoreboardPanel submissions={submissions} results={state.results} />
     </div>
   );
 }

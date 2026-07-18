@@ -44,10 +44,13 @@ export async function POST(request: Request) {
 
   const store = getStore();
 
-  const results = predictableOnly(await store.getResults());
-  if (Object.keys(results).length > 0) {
+  const [results, manualLock] = await Promise.all([
+    store.getResults(),
+    store.getManualLock(),
+  ]);
+  if (manualLock || Object.keys(predictableOnly(results)).length > 0) {
     return Response.json(
-      { error: "Picks are locked — the tournament has started" },
+      { error: "Picks are locked — submissions have closed" },
       { status: 403 }
     );
   }
