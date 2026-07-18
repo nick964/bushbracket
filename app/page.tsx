@@ -1,65 +1,296 @@
-import Image from "next/image";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import BracketView from "@/components/BracketView";
+import Leaderboard from "@/components/Leaderboard";
+import { PREDICTABLE_GAMES, TEAMS, type GameId, type TeamId } from "@/lib/bracket";
+import {
+  computeLeaderboard,
+  normalizeName,
+  predictableOnly,
+  pruneDecided,
+  type Decided,
+  type Submission,
+} from "@/lib/logic";
+
+interface AppState {
+  locked: boolean;
+  results: Decided;
+  submissions: Array<Submission | { name: string }>;
+}
+
+const LS_KEY = "bushbracket-submission";
 
 export default function Home() {
+  const [state, setState] = useState<AppState | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/state", { cache: "no-store" });
+      if (!res.ok) throw new Error();
+      setState(await res.json());
+      setLoadError(false);
+    } catch {
+      setLoadError(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    // setState happens after the fetch resolves, not synchronously
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    refresh();
+    const interval = setInterval(refresh, 30_000);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <main className="mx-auto w-full max-w-5xl flex-1 px-3 py-6 sm:px-6">
+      <header className="mb-6">
+        <h1 className="font-display text-3xl font-bold uppercase tracking-tight text-zinc-100 sm:text-4xl">
+          CDL Challengers <span className="text-orange-500">Vegas</span>
+        </h1>
+        <p className="mt-0.5 font-display text-lg font-semibold uppercase tracking-widest text-zinc-400">
+          Bracket Guesser
+        </p>
+        <p className="mt-1 text-sm text-zinc-500">
+          Double-elimination playoff bracket · call every game, top score wins
+        </p>
+        <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-600">
+          {Object.values(TEAMS).map((t) => (
+            <span key={t.id}>
+              <span className="font-semibold text-zinc-400">{t.name}</span>{" "}
+              {t.fullName}
+            </span>
+          ))}
+        </div>
+      </header>
+
+      {loadError && (
+        <p className="mb-4 rounded border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-300">
+          Couldn&rsquo;t load the bracket — check your connection. Retrying…
+        </p>
+      )}
+
+      {!state ? (
+        <p className="animate-pulse text-sm text-zinc-500">Loading bracket…</p>
+      ) : state.locked ? (
+        <LockedView state={state} />
+      ) : (
+        <PickView state={state} onSubmitted={refresh} />
+      )}
+    </main>
+  );
+}
+
+// ---------- Before lock: make picks & submit ----------
+
+function PickView({
+  state,
+  onSubmitted,
+}: {
+  state: AppState;
+  onSubmitted: () => void;
+}) {
+  const [picks, setPicks] = useState<Decided>({});
+  const [name, setName] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState<{ name: string; picks: Decided } | null>(
+    null
+  );
+
+  useEffect(() => {
+    // localStorage is only readable client-side, so this one-time
+    // hydration read has to live in an effect
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (raw) setSaved(JSON.parse(raw));
+    } catch {
+      // corrupt localStorage — ignore
+    }
+  }, []);
+
+  const handlePick = (game: GameId, team: TeamId) => {
+    setError(null);
+    setPicks((prev) => predictableOnly(pruneDecided({ ...prev, [game]: team })));
+  };
+
+  const pickedCount = PREDICTABLE_GAMES.filter((id) => picks[id]).length;
+  const total = PREDICTABLE_GAMES.length;
+
+  const takenNames = useMemo(
+    () => new Set(state.submissions.map((s) => normalizeName(s.name))),
+    [state.submissions]
+  );
+  const nameTaken = name.trim() !== "" && takenNames.has(normalizeName(name));
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, picks }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong — try again");
+        return;
+      }
+      const record = { name: data.name, picks: data.picks };
+      localStorage.setItem(LS_KEY, JSON.stringify(record));
+      setSaved(record);
+      onSubmitted();
+    } catch {
+      setError("Network error — try again");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (saved) {
+    return (
+      <div>
+        <div className="mb-5 rounded-lg border border-emerald-800 bg-emerald-950/40 px-4 py-3">
+          <p className="font-display text-lg font-bold uppercase text-emerald-300">
+            Bracket locked in, {saved.name} ✓
+          </p>
+          <p className="mt-1 text-sm text-emerald-200/70">
+            Your picks are saved. The leaderboard appears here once the first
+            real result is in.
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+        <BracketView decided={pruneDecided(saved.picks)} />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <p className="mb-4 text-sm text-zinc-400">
+        Tap a team in each matchup to pick your winner. Winners advance
+        automatically — fill out all {total} games, then submit.
+      </p>
+
+      <BracketView decided={pruneDecided(picks)} onPick={handlePick} />
+
+      <div className="sticky bottom-0 mt-6 rounded-lg border border-zinc-800 bg-zinc-950/95 p-4 backdrop-blur">
+        <div className="mb-3 flex items-center justify-between">
+          <span className="font-display text-sm font-semibold uppercase tracking-wider text-zinc-400">
+            Picks: <span className="text-orange-400">{pickedCount}</span>/{total}
+          </span>
+          <div className="h-1.5 w-32 overflow-hidden rounded-full bg-zinc-800 sm:w-48">
+            <div
+              className="h-full bg-orange-500 transition-all"
+              style={{ width: `${(pickedCount / total) * 100}%` }}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+          </div>
         </div>
-      </main>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your name"
+            maxLength={30}
+            className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-orange-500"
+          />
+          <button
+            onClick={submit}
+            disabled={
+              submitting ||
+              pickedCount < total ||
+              name.trim() === "" ||
+              nameTaken
+            }
+            className="rounded bg-orange-500 px-6 py-2 font-display text-sm font-bold uppercase tracking-wider text-black transition-colors hover:bg-orange-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+          >
+            {submitting ? "Submitting…" : "Submit bracket"}
+          </button>
+        </div>
+        {nameTaken && (
+          <p className="mt-2 text-xs text-amber-400">
+            A bracket was already submitted under that name — use a different
+            one.
+          </p>
+        )}
+        {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+        {pickedCount < total && (
+          <p className="mt-2 text-xs text-zinc-600">
+            {total - pickedCount} game{total - pickedCount === 1 ? "" : "s"}{" "}
+            left to pick.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- After lock: leaderboard + everyone's brackets ----------
+
+function LockedView({ state }: { state: AppState }) {
+  const submissions = useMemo(
+    () => state.submissions.filter((s): s is Submission => "picks" in s),
+    [state.submissions]
+  );
+  const rows = useMemo(
+    () => computeLeaderboard(submissions, state.results),
+    [submissions, state.results]
+  );
+  const [view, setView] = useState<string>("__results__");
+
+  const selectedSub = submissions.find((s) => s.name === view);
+  const actual = pruneDecided(state.results);
+
+  return (
+    <div>
+      <div className="mb-5 rounded-lg border border-orange-900/60 bg-orange-950/30 px-4 py-3">
+        <p className="font-display text-sm font-bold uppercase tracking-wider text-orange-300">
+          🔒 Picks are locked — tournament in progress
+        </p>
+        <p className="mt-1 text-xs text-orange-200/60">
+          Scores update as results come in. Tap a player to see their bracket.
+        </p>
+      </div>
+
+      <h2 className="mb-3 font-display text-xl font-bold uppercase tracking-wide text-zinc-200">
+        Leaderboard
+      </h2>
+      <Leaderboard
+        rows={rows}
+        selected={selectedSub?.name}
+        onSelect={(n) => setView(n)}
+      />
+
+      <div className="mt-6 mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="font-display text-xl font-bold uppercase tracking-wide text-zinc-200">
+          {selectedSub ? `${selectedSub.name}'s bracket` : "Live results"}
+        </h2>
+        <select
+          value={view}
+          onChange={(e) => setView(e.target.value)}
+          className="ml-auto rounded border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-200 outline-none focus:border-orange-500"
+        >
+          <option value="__results__">Live results</option>
+          {submissions.map((s) => (
+            <option key={s.name} value={s.name}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {selectedSub ? (
+        <BracketView
+          decided={pruneDecided(selectedSub.picks)}
+          compare={actual}
+        />
+      ) : (
+        <BracketView decided={actual} />
+      )}
     </div>
   );
 }
