@@ -10,11 +10,26 @@ export const dynamic = "force-dynamic";
 
 interface AdminBody {
   password?: string;
-  action?: "login" | "set" | "clear" | "entries" | "delete-entry" | "lock" | "unlock";
+  action?:
+    | "login"
+    | "set"
+    | "clear"
+    | "entries"
+    | "delete-entry"
+    | "lock"
+    | "unlock"
+    | "set-pot"
+    | "set-paid"
+    | "complete"
+    | "uncomplete";
   gameId?: string;
   winner?: string;
-  /** Submission id (Clerk user id) for delete-entry. */
+  /** Submission id (Clerk user id) for delete-entry and set-paid. */
   id?: string;
+  /** New pot total in dollars for set-pot. */
+  amount?: number;
+  /** Buy-in status for set-paid. */
+  paid?: boolean;
 }
 
 export async function POST(request: Request) {
@@ -52,6 +67,34 @@ export async function POST(request: Request) {
     const manualLock = body.action === "lock";
     await getStore().setManualLock(manualLock);
     return Response.json({ ok: true, manualLock });
+  }
+
+  if (body.action === "complete" || body.action === "uncomplete") {
+    const completed = body.action === "complete";
+    await getStore().setCompleted(completed);
+    return Response.json({ ok: true, completed });
+  }
+
+  if (body.action === "set-paid") {
+    const id = typeof body.id === "string" ? body.id : "";
+    if (!id) {
+      return Response.json({ error: "Unknown entry" }, { status: 400 });
+    }
+    await getStore().setPaid(id, Boolean(body.paid));
+    return Response.json({ ok: true });
+  }
+
+  if (body.action === "set-pot") {
+    const amount = body.amount;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 0) {
+      return Response.json(
+        { error: "Pot must be a non-negative dollar amount" },
+        { status: 400 }
+      );
+    }
+    const pot = Math.round(amount);
+    await getStore().setPot(pot);
+    return Response.json({ ok: true, pot });
   }
 
   if (body.action === "delete-entry") {

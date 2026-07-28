@@ -9,12 +9,12 @@ export default function AuthControls() {
     <span className="mt-1 flex shrink-0 items-center gap-2">
       <Show when="signed-out">
         <SignInButton>
-          <button className="rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-zinc-300 transition-colors hover:bg-zinc-800">
+          <button className="label-caps border border-white/15 bg-black/40 px-3 py-2 text-zinc-300 transition-colors hover:border-orange-500 hover:text-orange-400">
             Sign in
           </button>
         </SignInButton>
         <SignUpButton>
-          <button className="rounded bg-orange-500 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-black transition-colors hover:bg-orange-400">
+          <button className="label-caps btn-clip bg-orange-500 px-3 py-2 text-black transition-all hover:shadow-[0_0_15px_rgba(255,85,0,0.6)]">
             Sign up
           </button>
         </SignUpButton>

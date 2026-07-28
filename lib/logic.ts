@@ -16,6 +16,8 @@ export interface Submission {
   name: string;
   picks: Decided;
   createdAt: number;
+  /** Player has paid the buy-in (marked by the admin) — eligible for the full pot. */
+  paid?: boolean;
 }
 
 // Topological order: every game appears after the games its slots reference.
@@ -136,6 +138,7 @@ export function possibleWinners(results: Decided): Record<GameId, TeamId[]> {
 
 export interface LeaderboardRow {
   name: string;
+  paid: boolean;
   score: number;
   maxPossible: number;
   rank: number;
@@ -161,7 +164,7 @@ export function computeLeaderboard(
         maxPossible += GAMES[id].points;
       }
     }
-    return { name: sub.name, score, maxPossible, rank: 0 };
+    return { name: sub.name, paid: Boolean(sub.paid), score, maxPossible, rank: 0 };
   });
 
   rows.sort((x, y) => y.score - x.score || y.maxPossible - x.maxPossible);

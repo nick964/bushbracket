@@ -25,10 +25,11 @@ export default function AdminPage() {
   return (
     <main className="mx-auto w-full max-w-5xl flex-1 px-3 py-6 sm:px-6">
       <header className="mb-6">
-        <h1 className="font-display text-3xl font-bold uppercase tracking-tight text-zinc-100">
-          <span className="text-orange-500">Admin</span> · Results
+        <p className="label-caps text-orange-500">Command Console</p>
+        <h1 className="mt-1 font-display text-3xl font-bold uppercase tracking-tighter text-zinc-100">
+          Admin <span className="text-orange-500">{"// Results"}</span>
         </h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <p className="mt-2 text-xs text-zinc-500">
           Click the actual winner as each game finishes. Entering the first
           result locks everyone&rsquo;s picks.
         </p>
@@ -112,6 +113,9 @@ function ResultsEditor({
 }) {
   const [results, setResults] = useState<Decided | null>(null);
   const [manualLock, setManualLock] = useState(false);
+  const [completed, setCompleted] = useState(false);
+  const [pot, setPot] = useState(0);
+  const [potDraft, setPotDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -122,6 +126,9 @@ function ResultsEditor({
       const data = await res.json();
       setResults(data.results);
       setManualLock(Boolean(data.manualLock));
+      setCompleted(Boolean(data.completed));
+      setPot(data.pot);
+      setPotDraft(String(data.pot));
     } catch {
       setError("Couldn't load current results — refresh the page");
     }
@@ -153,6 +160,11 @@ function ResultsEditor({
       }
       if (data.results !== undefined) setResults(data.results);
       if (data.manualLock !== undefined) setManualLock(data.manualLock);
+      if (data.completed !== undefined) setCompleted(data.completed);
+      if (data.pot !== undefined) {
+        setPot(data.pot);
+        setPotDraft(String(data.pot));
+      }
     } catch {
       setError("Network error — the result was NOT saved. Try again.");
     } finally {
@@ -170,13 +182,30 @@ function ResultsEditor({
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm">
         <span className="font-display font-semibold uppercase tracking-wider text-zinc-300">
-          {resultCount > 0
-            ? `${resultCount}/${PREDICTABLE_GAMES.length} results entered — picks locked`
-            : manualLock
-              ? "Submissions locked by admin — no results yet"
-              : "No results yet — picks still open"}
+          {completed
+            ? "🏆 Tournament complete — winners are displayed"
+            : resultCount > 0
+              ? `${resultCount}/${PREDICTABLE_GAMES.length} results entered — picks locked`
+              : manualLock
+                ? "Submissions locked by admin — no results yet"
+                : "No results yet — picks still open"}
         </span>
-        {resultCount === 0 && (
+        {(completed || resultCount === PREDICTABLE_GAMES.length) && (
+          <button
+            onClick={() =>
+              mutate({ action: completed ? "uncomplete" : "complete" })
+            }
+            disabled={busy}
+            className={`rounded px-3 py-1 font-display text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 ${
+              completed
+                ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                : "bg-amber-500 text-black hover:bg-amber-400"
+            }`}
+          >
+            {completed ? "Reopen tournament" : "Mark tournament complete"}
+          </button>
+        )}
+        {!completed && resultCount === 0 && (
           <button
             onClick={() =>
               mutate({ action: manualLock ? "unlock" : "lock" })
@@ -193,6 +222,38 @@ function ResultsEditor({
         )}
         {busy && <span className="text-xs text-zinc-500">Saving…</span>}
         {error && <span className="text-xs text-red-400">{error}</span>}
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-4 py-3 text-sm">
+        <span className="font-display font-semibold uppercase tracking-wider text-emerald-300">
+          💰 Paid pot: ${pot}
+        </span>
+        <span className="flex items-center gap-1 text-zinc-300">
+          $
+          <input
+            type="number"
+            min={0}
+            value={potDraft}
+            onChange={(e) => setPotDraft(e.target.value)}
+            className="w-20 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+          />
+        </span>
+        <button
+          onClick={() => mutate({ action: "set-pot", amount: Number(potDraft) })}
+          disabled={
+            busy ||
+            potDraft.trim() === "" ||
+            !Number.isFinite(Number(potDraft)) ||
+            Number(potDraft) < 0 ||
+            Math.round(Number(potDraft)) === pot
+          }
+          className="rounded bg-emerald-600 px-3 py-1 font-display text-xs font-bold uppercase tracking-wider text-black transition-colors hover:bg-emerald-500 disabled:opacity-50"
+        >
+          Update pot
+        </button>
+        <span className="text-xs text-zinc-500">
+          Bump it +$5 as each Venmo buy-in lands. The free pot is fixed at $30.
+        </span>
       </div>
 
       <p className="mb-4 text-xs text-zinc-500">
@@ -279,6 +340,15 @@ function EntriesPanel({
     }
   };
 
+  const togglePaid = async (entry: StoredSubmission) => {
+    try {
+      await call({ action: "set-paid", id: entry.id, paid: !entry.paid });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't update paid status");
+    }
+  };
+
   const hasResults = Object.keys(predictableOnly(results)).length > 0;
   const viewingEntry = entries?.find((e) => e.id === viewing);
 
@@ -309,6 +379,21 @@ function EntriesPanel({
                   ` · ${scoreSubmission(entry.picks, results)} pts`}
               </span>
               <span className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => togglePaid(entry)}
+                  title={
+                    entry.paid
+                      ? "Marked paid — click to unmark"
+                      : "Mark this player's buy-in as received"
+                  }
+                  className={`rounded px-2 py-1 text-xs font-semibold ${
+                    entry.paid
+                      ? "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+                      : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                  }`}
+                >
+                  {entry.paid ? "💰 Paid" : "Mark paid"}
+                </button>
                 <button
                   onClick={() =>
                     setViewing(viewing === entry.id ? null : entry.id)

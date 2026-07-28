@@ -11,14 +11,17 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const { userId } = await auth();
   const store = getStore();
-  const [results, submissions, manualLock] = await Promise.all([
+  const [results, submissions, manualLock, pot, completed] = await Promise.all([
     store.getResults(),
     store.getSubmissions(),
     store.getManualLock(),
+    store.getPot(),
+    store.getCompleted(),
   ]);
 
   const publicResults = predictableOnly(results);
-  const locked = manualLock || Object.keys(publicResults).length > 0;
+  const locked =
+    manualLock || completed || Object.keys(publicResults).length > 0;
 
   // Clerk user ids are the storage keys — keep them out of the public payload
   const mine = userId ? submissions.find((s) => s.id === userId) : undefined;
@@ -26,15 +29,20 @@ export async function GET() {
     name: s.name,
     picks: s.picks,
     createdAt: s.createdAt,
+    paid: Boolean(s.paid),
   }));
 
   return Response.json({
     locked,
     manualLock,
+    completed,
+    pot,
     results: publicResults,
     yours: mine
       ? { name: mine.name, picks: mine.picks, createdAt: mine.createdAt }
       : null,
-    submissions: locked ? publicSubs : publicSubs.map((s) => ({ name: s.name })),
+    submissions: locked
+      ? publicSubs
+      : publicSubs.map((s) => ({ name: s.name, paid: s.paid })),
   });
 }

@@ -19,14 +19,14 @@ export default function Leaderboard({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border border-zinc-800">
+    <div className="overflow-hidden border border-white/10">
       <table className="w-full text-sm">
         <thead>
-          <tr className="bg-zinc-900 text-left font-display text-xs uppercase tracking-widest text-zinc-500">
-            <th className="px-3 py-2 font-semibold">#</th>
-            <th className="px-3 py-2 font-semibold">Player</th>
-            <th className="px-3 py-2 text-right font-semibold">Pts</th>
-            <th className="px-3 py-2 text-right font-semibold">Max</th>
+          <tr className="label-caps bg-black/60 text-left text-zinc-500">
+            <th className="px-3 py-2">#</th>
+            <th className="px-3 py-2">Operator</th>
+            <th className="px-3 py-2 text-right">Pts</th>
+            <th className="px-3 py-2 text-right">Max</th>
           </tr>
         </thead>
         <tbody>
@@ -34,22 +34,34 @@ export default function Leaderboard({
             <tr
               key={row.name}
               onClick={() => onSelect?.(row.name)}
-              className={`cursor-pointer border-t border-zinc-800/70 transition-colors ${
+              className={`cursor-pointer border-t border-white/10 bg-[rgba(30,30,30,0.6)] transition-colors ${
                 selected === row.name
                   ? "bg-orange-500/10"
-                  : "hover:bg-zinc-900"
+                  : "hover:bg-white/5"
               }`}
             >
-              <td className="px-3 py-2 font-display font-bold text-zinc-500">
-                {row.rank}
+              <td
+                className={`px-3 py-2 font-display font-bold ${
+                  row.rank === 1 ? "text-amber-400" : "text-zinc-500"
+                }`}
+              >
+                {row.rank === 1 ? "01" : String(row.rank).padStart(2, "0")}
               </td>
               <td className="px-3 py-2 font-medium text-zinc-200">
                 {row.name}
+                {row.paid && (
+                  <span
+                    title="Paid the buy-in — playing for the full pot"
+                    className="ml-1.5"
+                  >
+                    💰
+                  </span>
+                )}
               </td>
               <td className="px-3 py-2 text-right font-display text-base font-bold text-orange-400">
                 {row.score}
               </td>
-              <td className="px-3 py-2 text-right text-zinc-500">
+              <td className="px-3 py-2 text-right text-xs text-zinc-500">
                 {row.maxPossible}
                 <span className="text-zinc-700"> / {MAX_SCORE}</span>
               </td>

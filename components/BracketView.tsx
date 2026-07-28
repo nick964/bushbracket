@@ -19,6 +19,7 @@ interface Row {
 }
 
 interface Section {
+  phase: string;
   label: string;
   caption: string;
   rows: Row[];
@@ -36,10 +37,11 @@ const QUALIFIER_GAMES = new Set<GameId>([
   "BD2",
 ]);
 
-const groupSection = (letter: "A" | "B"): Section => ({
+const groupSection = (letter: "A" | "B", phase: string): Section => ({
+  phase: `${phase} // Double Elimination`,
   label: `Group ${letter}`,
   caption:
-    "Double elimination — win a Winners' Match or a Decider (Q) to advance to the playoffs.",
+    "Win a Winners' Match or a Decider (Q) to advance to the playoffs.",
   rows: [
     {
       columns: [
@@ -70,12 +72,13 @@ const groupSection = (letter: "A" | "B"): Section => ({
 });
 
 const SECTIONS: Section[] = [
-  groupSection("A"),
-  groupSection("B"),
+  groupSection("A", "Phase_01"),
+  groupSection("B", "Phase_02"),
   {
-    label: "Playoffs",
+    phase: "Phase_03 // Single Elimination",
+    label: "Championship Stage",
     caption:
-      "Single elimination — group winners face the other group's deciders. Quarters and semis are Bo7, the grand final Bo9.",
+      "Group winners face the other group's deciders. Quarters and semis are Bo7, the grand final Bo9.",
     rows: [
       {
         columns: [
@@ -112,7 +115,7 @@ export default function BracketView({
     <div className="flex min-w-max gap-3 sm:gap-4">
       {columns.map((col) => (
         <div key={col.title} className="flex w-40 sm:w-48 flex-col">
-          <div className="mb-2 rounded bg-zinc-800/80 px-2 py-1.5 text-center font-display text-xs font-semibold uppercase tracking-widest text-zinc-400">
+          <div className="label-caps mb-2 border border-white/10 bg-white/5 px-2 py-1.5 text-center text-zinc-400">
             {col.title}
           </div>
           <div className="flex flex-1 flex-col justify-around gap-3">
@@ -123,6 +126,7 @@ export default function BracketView({
                 slots={participants[id]}
                 winner={decided[id] ?? GAMES[id].fixedResult?.winner}
                 qualifier={QUALIFIER_GAMES.has(id)}
+                gold={id === "GF"}
                 onPick={onPick}
                 onClear={onClear}
                 actual={compare?.[id]}
@@ -136,22 +140,20 @@ export default function BracketView({
 
   return (
     <div className="overflow-x-auto pb-2">
-      <div className="space-y-8">
+      <div className="space-y-10">
         {SECTIONS.map((section) => (
           <div key={section.label} className="space-y-3">
-            <div className="flex min-w-max items-center gap-3">
-              <span className="font-display text-sm font-bold uppercase tracking-widest text-zinc-300">
+            <div className="min-w-max border-b border-white/10 pb-2">
+              <p className="label-caps text-orange-500">{section.phase}</p>
+              <h2 className="mt-1 font-display text-2xl font-bold uppercase tracking-tight text-zinc-100">
                 {section.label}
-              </span>
-              <div className="h-px flex-1 bg-zinc-800" />
+              </h2>
             </div>
-            <p className="max-w-xl text-xs text-zinc-600">{section.caption}</p>
+            <p className="max-w-xl text-xs text-zinc-500">{section.caption}</p>
             {section.rows.map((row, i) => (
               <div key={i} className="space-y-1.5">
                 {row.note && (
-                  <p className="text-[11px] italic text-zinc-600">
-                    ↓ {row.note}
-                  </p>
+                  <p className="label-caps text-zinc-600">↓ {row.note}</p>
                 )}
                 {renderColumns(row.columns)}
               </div>
@@ -168,6 +170,7 @@ function GameCard({
   slots,
   winner,
   qualifier,
+  gold,
   onPick,
   onClear,
   actual,
@@ -177,6 +180,8 @@ function GameCard({
   winner?: TeamId;
   /** Winner of this game claims a playoff spot. */
   qualifier?: boolean;
+  /** Grand-final treatment: trophy gold instead of caution orange. */
+  gold?: boolean;
   onPick?: (game: GameId, team: TeamId) => void;
   onClear?: (game: GameId) => void;
   actual?: TeamId;
@@ -190,27 +195,48 @@ function GameCard({
   const graded = !isFixed && actual !== undefined && winner !== undefined;
   const correct = graded && winner === actual;
 
+  const borderClass = graded
+    ? correct
+      ? "border-emerald-500/70"
+      : "border-red-500/70"
+    : gold
+      ? "border-amber-500/80 shadow-[0_0_15px_rgba(212,175,55,0.15)]"
+      : winner && !isFixed
+        ? "border-orange-500/60"
+        : "border-white/10";
+
   return (
     <div
-      className={`overflow-hidden rounded-lg border bg-zinc-900 ${
-        graded
-          ? correct
-            ? "border-emerald-500/70"
-            : "border-red-500/70"
-          : winner && !isFixed
-            ? "border-orange-500/50"
-            : "border-zinc-800"
-      }`}
+      className={`relative overflow-hidden border bg-[rgba(30,30,30,0.6)] backdrop-blur-md ${borderClass}`}
     >
-      <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/60 px-2 py-1">
+      {gold ? (
+        <>
+          <span className="hud-corner hud-corner-gold hud-corner-tl" />
+          <span className="hud-corner hud-corner-gold hud-corner-tr" />
+          <span className="hud-corner hud-corner-gold hud-corner-bl" />
+          <span className="hud-corner hud-corner-gold hud-corner-br" />
+        </>
+      ) : (
+        <>
+          <span className="hud-corner hud-corner-tl opacity-50" />
+          <span className="hud-corner hud-corner-br opacity-50" />
+        </>
+      )}
+      <div
+        className={`flex items-center justify-between border-b px-2 py-1 ${
+          gold ? "border-amber-500/30 bg-black/40" : "border-white/10 bg-black/40"
+        }`}
+      >
         <span className="flex items-center gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-            {gameId}
+          <span
+            className={`label-caps ${gold ? "text-amber-500" : "text-zinc-500"}`}
+          >
+            {gold ? "GF // The Decider" : gameId}
           </span>
           {qualifier && (
             <span
               title="Winner qualifies for the playoffs"
-              className="rounded bg-emerald-500/15 px-1 text-[9px] font-bold text-emerald-400"
+              className="label-caps bg-emerald-500/15 px-1 py-0.5 text-emerald-400"
             >
               Q
             </span>
@@ -219,25 +245,27 @@ function GameCard({
         <span className="flex items-center gap-1.5">
           {graded && (
             <span
-              className={`text-[10px] font-bold ${correct ? "text-emerald-400" : "text-red-400"}`}
+              className={`label-caps ${correct ? "text-emerald-400" : "text-red-400"}`}
             >
               {correct ? `+${game.points}` : "✗"}
             </span>
           )}
           {!isFixed && (
-            <span className="text-[10px] font-medium text-zinc-600">
-              {game.points} pt{game.points === 1 ? "" : "s"}
+            <span
+              className={`label-caps ${gold ? "text-amber-500/80" : "text-orange-500/80"}`}
+            >
+              {game.points} PT{game.points === 1 ? "" : "S"}
             </span>
           )}
           {isFixed && (
-            <span className="text-[10px] font-medium text-zinc-600">
+            <span className="label-caps text-zinc-600">
               {game.fixedResult!.score}
             </span>
           )}
           {onClear && winner && !isFixed && (
             <button
               onClick={() => onClear(gameId)}
-              className="rounded bg-zinc-800 px-1.5 text-[10px] font-semibold text-zinc-300 hover:bg-red-900/60 hover:text-red-200"
+              className="label-caps bg-white/10 px-1.5 py-0.5 text-zinc-300 hover:bg-red-900/60 hover:text-red-200"
               title="Undo this result"
             >
               undo
@@ -254,24 +282,57 @@ function GameCard({
             disabled={!clickable || team === null}
             title={team ? TEAMS[team].fullName : undefined}
             onClick={() => team && onPick?.(gameId, team)}
-            className={`flex w-full items-center justify-between px-2.5 py-2 text-left font-display text-sm font-semibold uppercase tracking-wide transition-colors ${
-              i === 0 ? "border-b border-zinc-800/70" : ""
-            } ${
-              team === null
-                ? "cursor-default text-[11px] normal-case italic tracking-normal text-zinc-600"
-                : isWinner
+            className={`flex w-full items-center gap-2.5 px-2.5 py-2 text-left transition-colors ${
+              i === 0 ? "border-b border-white/10" : ""
+            } ${clickable && team !== null ? "cursor-pointer hover:bg-white/5" : ""}`}
+          >
+            <span
+              className={`h-6 w-1 shrink-0 ${
+                isWinner
                   ? graded
                     ? correct
-                      ? "bg-emerald-500/15 text-emerald-300"
-                      : "bg-red-500/15 text-red-300"
-                    : "bg-orange-500/15 text-orange-400"
-                  : winner
-                    ? "text-zinc-600"
-                    : "text-zinc-200"
-            } ${clickable && team !== null ? "cursor-pointer hover:bg-zinc-800" : ""}`}
-          >
-            <span>{label}</span>
-            {isWinner && <span className="text-[10px]">▸</span>}
+                      ? "bg-emerald-500"
+                      : "bg-red-500"
+                    : gold
+                      ? "bg-amber-500"
+                      : "bg-orange-500"
+                  : "bg-zinc-700"
+              }`}
+            />
+            <span
+              className={`flex-1 font-display text-sm font-semibold uppercase tracking-wide ${
+                team === null
+                  ? "text-[11px] font-normal normal-case italic tracking-normal text-zinc-600"
+                  : isWinner
+                    ? graded
+                      ? correct
+                        ? "text-emerald-300"
+                        : "text-red-300"
+                      : gold
+                        ? "text-amber-300"
+                        : "text-orange-400"
+                    : winner
+                      ? "text-zinc-600"
+                      : "text-zinc-200"
+              }`}
+            >
+              {label}
+            </span>
+            {isWinner && (
+              <span
+                className={`text-[10px] ${
+                  graded
+                    ? correct
+                      ? "text-emerald-400"
+                      : "text-red-400"
+                    : gold
+                      ? "text-amber-400"
+                      : "text-orange-500"
+                }`}
+              >
+                ◉
+              </span>
+            )}
           </button>
         );
       })}

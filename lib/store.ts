@@ -6,6 +6,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Decided, Submission } from "./logic";
+import { BASE_POT } from "./pot";
 
 /** A submission plus its storage key (the submitter's Clerk user id). */
 export type StoredSubmission = Submission & { id: string };
@@ -20,6 +21,14 @@ export interface Store {
   /** Returns false if a submission with this id already exists. */
   addSubmission(id: string, sub: Submission): Promise<boolean>;
   deleteSubmission(id: string): Promise<void>;
+  /** Mark whether a player has paid the buy-in. No-op if the id is unknown. */
+  setPaid(id: string, paid: boolean): Promise<void>;
+  /** Current prize pot in whole dollars (defaults to BASE_POT). */
+  getPot(): Promise<number>;
+  setPot(amount: number): Promise<void>;
+  /** Admin-set flag: tournament is over, show the winners. */
+  getCompleted(): Promise<boolean>;
+  setCompleted(completed: boolean): Promise<void>;
 }
 
 function hasFirebaseEnv(): boolean {
@@ -94,6 +103,38 @@ const firestoreStore: Store = {
     const db = await firestoreDb();
     await db.collection("submissions").doc(id).delete();
   },
+  async setPaid(id, paid) {
+    const db = await firestoreDb();
+    try {
+      // update() (not set) so a stale id can't create a picks-less doc
+      await db.collection("submissions").doc(id).update({ paid });
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code !== 5 /* NOT_FOUND */) throw err;
+    }
+  },
+  async getPot() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/state").get();
+    const pot = snap.data()?.pot;
+    return typeof pot === "number" ? pot : BASE_POT;
+  },
+  async setPot(amount) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/state")
+      .set({ pot: amount, updatedAt: Date.now() }, { merge: true });
+  },
+  async getCompleted() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/state").get();
+    return Boolean(snap.data()?.completed);
+  },
+  async setCompleted(completed) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/state")
+      .set({ completed, updatedAt: Date.now() }, { merge: true });
+  },
 };
 
 // ---------- Local file fallback ----------
@@ -104,6 +145,8 @@ interface FileDb {
   results: Decided;
   submissions: Record<string, Submission>;
   lockedManually?: boolean;
+  pot?: number;
+  completed?: boolean;
 }
 
 async function readFileDb(): Promise<FileDb> {
@@ -150,6 +193,29 @@ const fileStore: Store = {
   async deleteSubmission(id) {
     const db = await readFileDb();
     delete db.submissions[id];
+    await writeFileDb(db);
+  },
+  async setPaid(id, paid) {
+    const db = await readFileDb();
+    if (!db.submissions[id]) return;
+    db.submissions[id].paid = paid;
+    await writeFileDb(db);
+  },
+  async getPot() {
+    const db = await readFileDb();
+    return typeof db.pot === "number" ? db.pot : BASE_POT;
+  },
+  async setPot(amount) {
+    const db = await readFileDb();
+    db.pot = amount;
+    await writeFileDb(db);
+  },
+  async getCompleted() {
+    return Boolean((await readFileDb()).completed);
+  },
+  async setCompleted(completed) {
+    const db = await readFileDb();
+    db.completed = completed;
     await writeFileDb(db);
   },
 };
