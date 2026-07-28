@@ -7,13 +7,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Decided, Submission } from "./logic";
 
+/** A submission plus its storage key (the submitter's Clerk user id). */
+export type StoredSubmission = Submission & { id: string };
+
 export interface Store {
   getResults(): Promise<Decided>;
   setResults(results: Decided): Promise<void>;
   /** Admin-set lock, independent of whether any results exist. */
   getManualLock(): Promise<boolean>;
   setManualLock(locked: boolean): Promise<void>;
-  getSubmissions(): Promise<Submission[]>;
+  getSubmissions(): Promise<StoredSubmission[]>;
   /** Returns false if a submission with this id already exists. */
   addSubmission(id: string, sub: Submission): Promise<boolean>;
   deleteSubmission(id: string): Promise<void>;
@@ -72,7 +75,7 @@ const firestoreStore: Store = {
   async getSubmissions() {
     const db = await firestoreDb();
     const snap = await db.collection("submissions").get();
-    return snap.docs.map((d) => d.data() as Submission);
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as Submission) }));
   },
   async addSubmission(id, sub) {
     const db = await firestoreDb();
@@ -134,7 +137,8 @@ const fileStore: Store = {
     await writeFileDb(db);
   },
   async getSubmissions() {
-    return Object.values((await readFileDb()).submissions);
+    const db = await readFileDb();
+    return Object.entries(db.submissions).map(([id, sub]) => ({ id, ...sub }));
   },
   async addSubmission(id, sub) {
     const db = await readFileDb();

@@ -19,22 +19,9 @@ export interface Submission {
 }
 
 // Topological order: every game appears after the games its slots reference.
-export const GAME_ORDER: GameId[] = [
-  "UBQF1",
-  "UBQF2",
-  "UBQF3",
-  "UBQF4",
-  "UBSF1",
-  "UBSF2",
-  "LBR1A",
-  "LBR1B",
-  "LBQF1",
-  "LBQF2",
-  "UBF",
-  "LBSF",
-  "LBF",
-  "GF",
-];
+// Every game in this bracket is predictable, and the fill-out order already
+// respects dependencies, so the two orders coincide.
+export const GAME_ORDER: GameId[] = [...PREDICTABLE_GAMES];
 
 // Winners of games that were already final in the source bracket image.
 export function fixedResults(): Decided {
@@ -72,7 +59,7 @@ export function resolveParticipants(decided: Decided): Participants {
 }
 
 // Drop any decision that is inconsistent with upstream decisions (e.g. the
-// picked team no longer reaches that game). Fixed UBQF results are always
+// picked team no longer reaches that game). Fixed pre-completed results are always
 // included in the returned map. Processes in topological order so one removal
 // cascades to everything downstream that depended on it.
 export function pruneDecided(decided: Decided): Decided {
@@ -112,31 +99,39 @@ export function scoreSubmission(picks: Decided, results: Decided): number {
   return score;
 }
 
-// Every consistent way the remaining games could play out, given the actual
-// results so far. At most 2^10 = 1024 scenarios, so brute force is fine.
-export function enumerateScenarios(results: Decided): Decided[] {
-  const base = pruneDecided(results);
-  const scenarios: Decided[] = [];
+// For each game, which teams could still win it given the actual results so
+// far. Decided games have exactly their winner; undecided games have every
+// team that could still reach either slot. (Results are only ever recorded
+// once both participants are known, so a decided game's loser is always
+// resolvable.)
+export function possibleWinners(results: Decided): Record<GameId, TeamId[]> {
+  const decided = pruneDecided(results);
+  const participants = resolveParticipants(decided);
 
-  const walk = (decided: Decided, idx: number) => {
-    if (idx === GAME_ORDER.length) {
-      scenarios.push(decided);
-      return;
+  // Teams that could still occupy a slot of an undecided game.
+  const possible = {} as Record<GameId, TeamId[]>;
+  const winners = {} as Record<GameId, TeamId[]>;
+
+  const slotPossible = (source: SlotSource): TeamId[] => {
+    if (source.kind === "team") return [source.team];
+    const winner = decided[source.game];
+    if (source.kind === "winner") {
+      return winner ? [winner] : possible[source.game];
     }
-    const id = GAME_ORDER[idx];
-    if (decided[id]) {
-      walk(decided, idx + 1);
-      return;
+    if (winner) {
+      const [a, b] = participants[source.game];
+      if (a === null || b === null) return [];
+      return [winner === a ? b : a];
     }
-    const [a, b] = resolveParticipants(decided)[id];
-    // In a fully decided prefix both participants are always known.
-    for (const team of [a, b]) {
-      if (team) walk({ ...decided, [id]: team }, idx + 1);
-    }
+    return possible[source.game];
   };
 
-  walk(base, 0);
-  return scenarios;
+  for (const id of GAME_ORDER) {
+    const [s1, s2] = GAMES[id].slots;
+    possible[id] = [...new Set([...slotPossible(s1), ...slotPossible(s2)])];
+    winners[id] = decided[id] ? [decided[id]] : possible[id];
+  }
+  return winners;
 }
 
 export interface LeaderboardRow {
@@ -150,21 +145,23 @@ export function computeLeaderboard(
   submissions: Submission[],
   results: Decided
 ): LeaderboardRow[] {
-  const scenarios = enumerateScenarios(results);
+  const actual = pruneDecided(results);
+  // 28 games is far too many to enumerate scenarios (2^28), so maxPossible is
+  // an upper bound instead: a pick still counts as winnable while its team
+  // could still win that game. Slightly optimistic across dependent games,
+  // and it converges to exact as results come in.
+  const winnable = possibleWinners(actual);
 
   const rows = submissions.map((sub) => {
-    const score = scoreSubmission(sub.picks, results);
-    let best = score;
-    for (const scenario of scenarios) {
-      let future = 0;
-      for (const id of PREDICTABLE_GAMES) {
-        if (!results[id] && sub.picks[id] === scenario[id]) {
-          future += GAMES[id].points;
-        }
+    const score = scoreSubmission(sub.picks, actual);
+    let maxPossible = score;
+    for (const id of PREDICTABLE_GAMES) {
+      const pick = sub.picks[id];
+      if (!actual[id] && pick && winnable[id].includes(pick)) {
+        maxPossible += GAMES[id].points;
       }
-      if (score + future > best) best = score + future;
     }
-    return { name: sub.name, score, maxPossible: best, rank: 0 };
+    return { name: sub.name, score, maxPossible, rank: 0 };
   });
 
   rows.sort((x, y) => y.score - x.score || y.maxPossible - x.maxPossible);
@@ -175,7 +172,7 @@ export function computeLeaderboard(
   return rows;
 }
 
-// Human label for an unresolved slot, e.g. "Winner UBSF1" / "Loser UBF".
+// Human label for an unresolved slot, e.g. "Winner AW1" / "Loser SF2".
 export function slotLabel(source: SlotSource): string {
   if (source.kind === "team") return source.team;
   return `${source.kind === "winner" ? "Winner" : "Loser"} ${source.game}`;

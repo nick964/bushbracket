@@ -1,3 +1,4 @@
+import { auth } from "@clerk/nextjs/server";
 import { getStore } from "@/lib/store";
 import { predictableOnly } from "@/lib/logic";
 
@@ -6,7 +7,9 @@ export const dynamic = "force-dynamic";
 // Public state: actual results, lock status, and submissions. Before the
 // bracket locks only names are exposed (so nobody can copy picks); once the
 // first real result is in, full picks are returned for the leaderboard view.
+// Signed-in callers also get their own submission back as `yours`.
 export async function GET() {
+  const { userId } = await auth();
   const store = getStore();
   const [results, submissions, manualLock] = await Promise.all([
     store.getResults(),
@@ -17,12 +20,21 @@ export async function GET() {
   const publicResults = predictableOnly(results);
   const locked = manualLock || Object.keys(publicResults).length > 0;
 
+  // Clerk user ids are the storage keys — keep them out of the public payload
+  const mine = userId ? submissions.find((s) => s.id === userId) : undefined;
+  const publicSubs = submissions.map((s) => ({
+    name: s.name,
+    picks: s.picks,
+    createdAt: s.createdAt,
+  }));
+
   return Response.json({
     locked,
     manualLock,
     results: publicResults,
-    submissions: locked
-      ? submissions
-      : submissions.map((s) => ({ name: s.name })),
+    yours: mine
+      ? { name: mine.name, picks: mine.picks, createdAt: mine.createdAt }
+      : null,
+    submissions: locked ? publicSubs : publicSubs.map((s) => ({ name: s.name })),
   });
 }

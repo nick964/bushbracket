@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import BracketView from "@/components/BracketView";
-import type { GameId, TeamId } from "@/lib/bracket";
+import { PREDICTABLE_GAMES, type GameId, type TeamId } from "@/lib/bracket";
 import {
   predictableOnly,
   pruneDecided,
   scoreSubmission,
   type Decided,
-  type Submission,
 } from "@/lib/logic";
+import type { StoredSubmission } from "@/lib/store";
 
 const PW_KEY = "bushbracket-admin-pw";
 
@@ -171,7 +171,7 @@ function ResultsEditor({
       <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-sm">
         <span className="font-display font-semibold uppercase tracking-wider text-zinc-300">
           {resultCount > 0
-            ? `${resultCount}/10 results entered — picks locked`
+            ? `${resultCount}/${PREDICTABLE_GAMES.length} results entered — picks locked`
             : manualLock
               ? "Submissions locked by admin — no results yet"
               : "No results yet — picks still open"}
@@ -229,7 +229,7 @@ function EntriesPanel({
   results: Decided;
   onAuthFailure: () => void;
 }) {
-  const [entries, setEntries] = useState<Submission[] | null>(null);
+  const [entries, setEntries] = useState<StoredSubmission[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -268,11 +268,11 @@ function EntriesPanel({
     load();
   }, [load]);
 
-  const remove = async (name: string) => {
+  const remove = async (id: string) => {
     setConfirming(null);
     try {
-      await call({ action: "delete-entry", name });
-      if (viewing === name) setViewing(null);
+      await call({ action: "delete-entry", id });
+      if (viewing === id) setViewing(null);
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
@@ -280,7 +280,7 @@ function EntriesPanel({
   };
 
   const hasResults = Object.keys(predictableOnly(results)).length > 0;
-  const viewingEntry = entries?.find((e) => e.name === viewing);
+  const viewingEntry = entries?.find((e) => e.id === viewing);
 
   return (
     <section className="mt-8">
@@ -296,7 +296,7 @@ function EntriesPanel({
         <div className="overflow-hidden rounded-lg border border-zinc-800">
           {entries.map((entry) => (
             <div
-              key={entry.name}
+              key={entry.id}
               className="flex flex-wrap items-center gap-2 border-b border-zinc-800/70 px-3 py-2 text-sm last:border-b-0 odd:bg-zinc-900/40"
             >
               <span className="font-medium text-zinc-200">{entry.name}</span>
@@ -311,16 +311,16 @@ function EntriesPanel({
               <span className="ml-auto flex items-center gap-2">
                 <button
                   onClick={() =>
-                    setViewing(viewing === entry.name ? null : entry.name)
+                    setViewing(viewing === entry.id ? null : entry.id)
                   }
                   className="rounded bg-zinc-800 px-2 py-1 text-xs font-semibold text-zinc-300 hover:bg-zinc-700"
                 >
-                  {viewing === entry.name ? "Hide" : "View"}
+                  {viewing === entry.id ? "Hide" : "View"}
                 </button>
-                {confirming === entry.name ? (
+                {confirming === entry.id ? (
                   <>
                     <button
-                      onClick={() => remove(entry.name)}
+                      onClick={() => remove(entry.id)}
                       className="rounded bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-500"
                     >
                       Confirm delete
@@ -334,7 +334,7 @@ function EntriesPanel({
                   </>
                 ) : (
                   <button
-                    onClick={() => setConfirming(entry.name)}
+                    onClick={() => setConfirming(entry.id)}
                     className="rounded bg-zinc-800 px-2 py-1 text-xs font-semibold text-red-300 hover:bg-red-900/60"
                   >
                     Delete

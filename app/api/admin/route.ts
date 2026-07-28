@@ -1,6 +1,5 @@
 import { PREDICTABLE_GAMES, type GameId, type TeamId } from "@/lib/bracket";
 import {
-  normalizeName,
   predictableOnly,
   pruneDecided,
   resolveParticipants,
@@ -14,7 +13,8 @@ interface AdminBody {
   action?: "login" | "set" | "clear" | "entries" | "delete-entry" | "lock" | "unlock";
   gameId?: string;
   winner?: string;
-  name?: string;
+  /** Submission id (Clerk user id) for delete-entry. */
+  id?: string;
 }
 
 export async function POST(request: Request) {
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   }
 
   if (body.action === "delete-entry") {
-    const id = normalizeName(body.name ?? "");
+    const id = typeof body.id === "string" ? body.id : "";
     if (!id) {
       return Response.json({ error: "Unknown entry" }, { status: 400 });
     }
@@ -94,8 +94,8 @@ export async function POST(request: Request) {
   }
 
   // Re-prune so clearing/changing a game wipes any downstream results that
-  // depended on it (e.g. undoing a UBSF result clears UBF and the LBQF the
-  // loser dropped into).
+  // depended on it (e.g. undoing a winners' match clears the decider its
+  // loser dropped into and any playoff games downstream).
   const clean = predictableOnly(pruneDecided(results));
   await store.setResults(clean);
 

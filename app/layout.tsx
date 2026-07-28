@@ -1,3 +1,4 @@
+import {ClerkProvider} from "@clerk/nextjs";
 import type { Metadata, Viewport } from "next";
 import { Geist, Oswald } from "next/font/google";
 import "./globals.css";
@@ -13,8 +14,9 @@ const oswald = Oswald({
 });
 
 export const metadata: Metadata = {
-  title: "CDL Challengers Vegas - Bracket Guesser",
-  description: "Predict the CDL Challengers Vegas playoff bracket",
+  title: "EWC Call of Duty Bracket Challenge",
+  description:
+    "Predict the Call of Duty: Black Ops 7 bracket at the Esports World Cup 2026",
 };
 
 export const viewport: Viewport = {
@@ -31,7 +33,11 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${oswald.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <ClerkProvider>
+          {children}
+        </ClerkProvider>
+      </body>
     </html>
   );
 }

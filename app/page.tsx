@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { SignInButton, useUser } from "@clerk/nextjs";
+import AuthControls from "@/components/AuthControls";
 import BracketView from "@/components/BracketView";
 import ScoreboardPanel from "@/components/ScoreboardPanel";
 import { PREDICTABLE_GAMES, TEAMS, type GameId, type TeamId } from "@/lib/bracket";
@@ -16,10 +18,10 @@ import {
 interface AppState {
   locked: boolean;
   results: Decided;
+  /** The signed-in caller's own submission, if they've made one. */
+  yours: Submission | null;
   submissions: Array<Submission | { name: string }>;
 }
-
-const LS_KEY = "bushbracket-submission";
 
 export default function Home() {
   const [state, setState] = useState<AppState | null>(null);
@@ -49,20 +51,24 @@ export default function Home() {
       <header className="mb-6">
         <div className="flex items-start justify-between gap-3">
           <h1 className="font-display text-3xl font-bold uppercase tracking-tight text-zinc-100 sm:text-4xl">
-            CDL Challengers <span className="text-orange-500">Vegas</span>
+            EWC <span className="text-orange-500">Call of Duty</span>
           </h1>
-          <Link
-            href="/scoreboard"
-            className="mt-1 shrink-0 rounded border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-orange-400 transition-colors hover:bg-orange-500/20"
-          >
-            Scoreboard →
-          </Link>
+          <span className="flex shrink-0 items-start gap-2">
+            <Link
+              href="/scoreboard"
+              className="mt-1 shrink-0 rounded border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-orange-400 transition-colors hover:bg-orange-500/20"
+            >
+              Scoreboard →
+            </Link>
+            <AuthControls />
+          </span>
         </div>
         <p className="mt-0.5 font-display text-lg font-semibold uppercase tracking-widest text-zinc-400">
-          Bracket Guesser
+          Bracket Challenge
         </p>
         <p className="mt-1 text-sm text-zinc-500">
-          Double-elimination playoff bracket · call every game, top score wins
+          Esports World Cup · Aug 5–9 · two double-elim groups into single-elim
+          playoffs · call every game, top score wins
         </p>
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-zinc-600">
           {Object.values(TEAMS).map((t) => (
@@ -100,25 +106,27 @@ function PickView({
   state: AppState;
   onSubmitted: () => void;
 }) {
+  const { isLoaded, isSignedIn, user } = useUser();
   const [picks, setPicks] = useState<Decided>({});
   const [name, setName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState<{ name: string; picks: Decided } | null>(
-    null
-  );
+  // Set right after a successful POST so the confirmation shows without
+  // waiting for the state refetch; the server's `yours` takes over after.
+  const [justSubmitted, setJustSubmitted] = useState<{
+    name: string;
+    picks: Decided;
+  } | null>(null);
 
   useEffect(() => {
-    // localStorage is only readable client-side, so this one-time
-    // hydration read has to live in an effect
-    try {
-      const raw = localStorage.getItem(LS_KEY);
+    // Default the display name to the Clerk profile once it loads
+    if (user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      if (raw) setSaved(JSON.parse(raw));
-    } catch {
-      // corrupt localStorage — ignore
+      setName((n) => n || user.fullName || user.username || "");
     }
-  }, []);
+  }, [user]);
+
+  const saved = justSubmitted ?? state.yours;
 
   const handlePick = (game: GameId, team: TeamId) => {
     setError(null);
@@ -148,9 +156,7 @@ function PickView({
         setError(data.error ?? "Something went wrong — try again");
         return;
       }
-      const record = { name: data.name, picks: data.picks };
-      localStorage.setItem(LS_KEY, JSON.stringify(record));
-      setSaved(record);
+      setJustSubmitted({ name: data.name, picks: data.picks });
       onSubmitted();
     } catch {
       setError("Network error — try again");
@@ -167,8 +173,8 @@ function PickView({
             Bracket locked in, {saved.name} ✓
           </p>
           <p className="mt-1 text-sm text-emerald-200/70">
-            Your picks are saved. The leaderboard appears here once the first
-            real result is in.
+            Your picks are saved to your account. The leaderboard appears here
+            once the first real result is in.
           </p>
         </div>
         <BracketView decided={pruneDecided(saved.picks)} />
@@ -198,27 +204,44 @@ function PickView({
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Your name"
-            maxLength={30}
-            className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-orange-500"
-          />
-          <button
-            onClick={submit}
-            disabled={
-              submitting ||
-              pickedCount < total ||
-              name.trim() === "" ||
-              nameTaken
-            }
-            className="rounded bg-orange-500 px-6 py-2 font-display text-sm font-bold uppercase tracking-wider text-black transition-colors hover:bg-orange-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
-          >
-            {submitting ? "Submitting…" : "Submit bracket"}
-          </button>
+          {isLoaded && !isSignedIn ? (
+            <SignInButton mode="modal">
+              <button className="rounded bg-orange-500 px-6 py-2 font-display text-sm font-bold uppercase tracking-wider text-black transition-colors hover:bg-orange-400 sm:ml-auto">
+                Sign in to submit
+              </button>
+            </SignInButton>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Display name"
+                maxLength={30}
+                className="flex-1 rounded border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 outline-none focus:border-orange-500"
+              />
+              <button
+                onClick={submit}
+                disabled={
+                  !isLoaded ||
+                  submitting ||
+                  pickedCount < total ||
+                  name.trim() === "" ||
+                  nameTaken
+                }
+                className="rounded bg-orange-500 px-6 py-2 font-display text-sm font-bold uppercase tracking-wider text-black transition-colors hover:bg-orange-400 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+              >
+                {submitting ? "Submitting…" : "Submit bracket"}
+              </button>
+            </>
+          )}
         </div>
+        {isLoaded && !isSignedIn && (
+          <p className="mt-2 text-xs text-zinc-500">
+            You need an account to enter — your picks here are kept while you
+            sign in.
+          </p>
+        )}
         {nameTaken && (
           <p className="mt-2 text-xs text-amber-400">
             A bracket was already submitted under that name — use a different

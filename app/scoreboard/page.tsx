@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import AuthControls from "@/components/AuthControls";
 import ScoreboardPanel from "@/components/ScoreboardPanel";
 import { type Decided, type Submission } from "@/lib/logic";
 
@@ -41,15 +42,18 @@ export default function ScoreboardPage() {
           <h1 className="font-display text-3xl font-bold uppercase tracking-tight text-zinc-100 sm:text-4xl">
             <span className="text-orange-500">Scoreboard</span>
           </h1>
-          <Link
-            href="/"
-            className="mt-1 shrink-0 rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-zinc-300 transition-colors hover:bg-zinc-800"
-          >
-            ← Bracket
-          </Link>
+          <span className="flex shrink-0 items-start gap-2">
+            <Link
+              href="/"
+              className="mt-1 shrink-0 rounded border border-zinc-700 bg-zinc-900 px-3 py-1.5 font-display text-xs font-bold uppercase tracking-wider text-zinc-300 transition-colors hover:bg-zinc-800"
+            >
+              ← Bracket
+            </Link>
+            <AuthControls />
+          </span>
         </div>
         <p className="mt-1 text-sm text-zinc-500">
-          CDL Challengers Vegas · updates automatically as results come in
+          EWC Call of Duty · updates automatically as results come in
         </p>
       </header>
 

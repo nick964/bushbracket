@@ -12,22 +12,85 @@ interface Column {
   games: GameId[];
 }
 
-const UPPER_COLUMNS: Column[] = [
-  { title: "UB Quarterfinals", games: ["UBQF1", "UBQF2", "UBQF3", "UBQF4"] },
-  { title: "UB Semifinals", games: ["UBSF1", "UBSF2"] },
-  { title: "UB Final", games: ["UBF"] },
-  { title: "Grand Final", games: ["GF"] },
-];
+interface Row {
+  /** Small note shown above the row, e.g. explaining who drops into it. */
+  note?: string;
+  columns: Column[];
+}
 
-const LOWER_COLUMNS: Column[] = [
-  { title: "LB Round 1", games: ["LBR1A", "LBR1B"] },
-  { title: "LB Quarterfinals", games: ["LBQF1", "LBQF2"] },
-  { title: "LB Semifinal", games: ["LBSF"] },
-  { title: "LB Final", games: ["LBF"] },
+interface Section {
+  label: string;
+  caption: string;
+  rows: Row[];
+}
+
+// Games whose winner claims a playoff spot — marked with a "Q" badge.
+const QUALIFIER_GAMES = new Set<GameId>([
+  "AW1",
+  "AW2",
+  "AD1",
+  "AD2",
+  "BW1",
+  "BW2",
+  "BD1",
+  "BD2",
+]);
+
+const groupSection = (letter: "A" | "B"): Section => ({
+  label: `Group ${letter}`,
+  caption:
+    "Double elimination — win a Winners' Match or a Decider (Q) to advance to the playoffs.",
+  rows: [
+    {
+      columns: [
+        {
+          title: "Opening Round",
+          games: [`${letter}1`, `${letter}2`, `${letter}3`, `${letter}4`] as GameId[],
+        },
+        {
+          title: "Winners' Matches",
+          games: [`${letter}W1`, `${letter}W2`] as GameId[],
+        },
+      ],
+    },
+    {
+      note: "Losers drop down — lose here and you're out",
+      columns: [
+        {
+          title: "Elimination Round",
+          games: [`${letter}E1`, `${letter}E2`] as GameId[],
+        },
+        {
+          title: "Deciders",
+          games: [`${letter}D1`, `${letter}D2`] as GameId[],
+        },
+      ],
+    },
+  ],
+});
+
+const SECTIONS: Section[] = [
+  groupSection("A"),
+  groupSection("B"),
+  {
+    label: "Playoffs",
+    caption:
+      "Single elimination — group winners face the other group's deciders. Quarters and semis are Bo7, the grand final Bo9.",
+    rows: [
+      {
+        columns: [
+          { title: "Quarterfinals", games: ["QF1", "QF2", "QF3", "QF4"] },
+          { title: "Semifinals", games: ["SF1", "SF2"] },
+          { title: "Grand Final", games: ["GF"] },
+          { title: "3rd Place", games: ["TP"] },
+        ],
+      },
+    ],
+  },
 ];
 
 export interface BracketViewProps {
-  /** Winners to display (fixed UBQF results are always shown regardless). */
+  /** Winners to display (fixed pre-completed results are always shown regardless). */
   decided: Decided;
   /** Click a team to pick/set a winner. Omit for read-only display. */
   onPick?: (game: GameId, team: TeamId) => void;
@@ -59,6 +122,7 @@ export default function BracketView({
                 gameId={id}
                 slots={participants[id]}
                 winner={decided[id] ?? GAMES[id].fixedResult?.winner}
+                qualifier={QUALIFIER_GAMES.has(id)}
                 onPick={onPick}
                 onClear={onClear}
                 actual={compare?.[id]}
@@ -72,16 +136,28 @@ export default function BracketView({
 
   return (
     <div className="overflow-x-auto pb-2">
-      <div className="space-y-6">
-        {renderColumns(UPPER_COLUMNS)}
-        <div className="flex min-w-max items-center gap-3">
-          <div className="h-px flex-1 bg-zinc-800" />
-          <span className="font-display text-xs uppercase tracking-widest text-zinc-600">
-            Lower Bracket
-          </span>
-          <div className="h-px flex-1 bg-zinc-800" />
-        </div>
-        {renderColumns(LOWER_COLUMNS)}
+      <div className="space-y-8">
+        {SECTIONS.map((section) => (
+          <div key={section.label} className="space-y-3">
+            <div className="flex min-w-max items-center gap-3">
+              <span className="font-display text-sm font-bold uppercase tracking-widest text-zinc-300">
+                {section.label}
+              </span>
+              <div className="h-px flex-1 bg-zinc-800" />
+            </div>
+            <p className="max-w-xl text-xs text-zinc-600">{section.caption}</p>
+            {section.rows.map((row, i) => (
+              <div key={i} className="space-y-1.5">
+                {row.note && (
+                  <p className="text-[11px] italic text-zinc-600">
+                    ↓ {row.note}
+                  </p>
+                )}
+                {renderColumns(row.columns)}
+              </div>
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -91,6 +167,7 @@ function GameCard({
   gameId,
   slots,
   winner,
+  qualifier,
   onPick,
   onClear,
   actual,
@@ -98,6 +175,8 @@ function GameCard({
   gameId: GameId;
   slots: [TeamId | null, TeamId | null];
   winner?: TeamId;
+  /** Winner of this game claims a playoff spot. */
+  qualifier?: boolean;
   onPick?: (game: GameId, team: TeamId) => void;
   onClear?: (game: GameId) => void;
   actual?: TeamId;
@@ -124,8 +203,18 @@ function GameCard({
       }`}
     >
       <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/60 px-2 py-1">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
-          {gameId}
+        <span className="flex items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">
+            {gameId}
+          </span>
+          {qualifier && (
+            <span
+              title="Winner qualifies for the playoffs"
+              className="rounded bg-emerald-500/15 px-1 text-[9px] font-bold text-emerald-400"
+            >
+              Q
+            </span>
+          )}
         </span>
         <span className="flex items-center gap-1.5">
           {graded && (
