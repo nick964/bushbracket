@@ -4,4 +4,4 @@
 
 export const BASE_POT = 30;
 export const BUY_IN = 5;
-export const VENMO_HANDLE = "NickRobinson964";
+export const VENMO_HANDLE = "nicky_robby";
