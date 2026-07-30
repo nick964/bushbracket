@@ -7,10 +7,13 @@ export default function Leaderboard({
   rows,
   selected,
   onSelect,
+  maxScore = MAX_SCORE,
 }: {
   rows: LeaderboardRow[];
   selected?: string;
   onSelect?: (name: string) => void;
+  /** Denominator for the Max column (defaults to the EWC bracket's). */
+  maxScore?: number;
 }) {
   if (rows.length === 0) {
     return (
@@ -63,7 +66,7 @@ export default function Leaderboard({
               </td>
               <td className="px-3 py-2 text-right text-xs text-zinc-500">
                 {row.maxPossible}
-                <span className="text-zinc-700"> / {MAX_SCORE}</span>
+                <span className="text-zinc-700"> / {maxScore}</span>
               </td>
             </tr>
           ))}

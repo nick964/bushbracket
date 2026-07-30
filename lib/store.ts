@@ -6,12 +6,35 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Decided, Submission } from "./logic";
-import { BASE_POT } from "./pot";
+import type { LcqDecided, LcqSubmission } from "./lcq";
+import { BASE_POT, LCQ_BASE_POT } from "./pot";
 
 /** A submission plus its storage key (the submitter's Clerk user id). */
 export type StoredSubmission = Submission & { id: string };
 
+export type StoredLcqSubmission = LcqSubmission & { id: string };
+
+/** Persistence for the LCQ side event — same shape as the main event. */
+export interface LcqStore {
+  getResults(): Promise<LcqDecided>;
+  setResults(results: LcqDecided): Promise<void>;
+  getManualLock(): Promise<boolean>;
+  setManualLock(locked: boolean): Promise<void>;
+  getSubmissions(): Promise<StoredLcqSubmission[]>;
+  /** Returns false if a submission with this id already exists. */
+  addSubmission(id: string, sub: LcqSubmission): Promise<boolean>;
+  deleteSubmission(id: string): Promise<void>;
+  /** Mark whether a player has paid the buy-in. No-op if the id is unknown. */
+  setPaid(id: string, paid: boolean): Promise<void>;
+  /** Current prize pot in whole dollars (defaults to LCQ_BASE_POT, i.e. $0). */
+  getPot(): Promise<number>;
+  setPot(amount: number): Promise<void>;
+  getCompleted(): Promise<boolean>;
+  setCompleted(completed: boolean): Promise<void>;
+}
+
 export interface Store {
+  lcq: LcqStore;
   getResults(): Promise<Decided>;
   setResults(results: Decided): Promise<void>;
   /** Admin-set lock, independent of whether any results exist. */
@@ -58,7 +81,89 @@ async function firestoreDb() {
   return getFirestore();
 }
 
+// LCQ state lives in its own doc (bracket/lcq) and collection
+// (lcq-submissions), fully independent of the main event.
+const firestoreLcqStore: LcqStore = {
+  async getResults() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/lcq").get();
+    return (snap.data()?.results as LcqDecided) ?? {};
+  },
+  async setResults(results) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/lcq")
+      .set({ results, updatedAt: Date.now() }, { merge: true });
+  },
+  async getManualLock() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/lcq").get();
+    return Boolean(snap.data()?.lockedManually);
+  },
+  async setManualLock(locked) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/lcq")
+      .set({ lockedManually: locked, updatedAt: Date.now() }, { merge: true });
+  },
+  async getSubmissions() {
+    const db = await firestoreDb();
+    const snap = await db.collection("lcq-submissions").get();
+    return snap.docs.map((d) => ({ id: d.id, ...(d.data() as LcqSubmission) }));
+  },
+  async addSubmission(id, sub) {
+    const db = await firestoreDb();
+    try {
+      // create() fails if the doc exists — atomic duplicate check
+      await db.collection("lcq-submissions").doc(id).create(sub);
+      return true;
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code === 6 /* ALREADY_EXISTS */) {
+        return false;
+      }
+      throw err;
+    }
+  },
+  async deleteSubmission(id) {
+    const db = await firestoreDb();
+    await db.collection("lcq-submissions").doc(id).delete();
+  },
+  async setPaid(id, paid) {
+    const db = await firestoreDb();
+    try {
+      // update() (not set) so a stale id can't create a picks-less doc
+      await db.collection("lcq-submissions").doc(id).update({ paid });
+    } catch (err: unknown) {
+      if ((err as { code?: number }).code !== 5 /* NOT_FOUND */) throw err;
+    }
+  },
+  async getPot() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/lcq").get();
+    const pot = snap.data()?.pot;
+    return typeof pot === "number" ? pot : LCQ_BASE_POT;
+  },
+  async setPot(amount) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/lcq")
+      .set({ pot: amount, updatedAt: Date.now() }, { merge: true });
+  },
+  async getCompleted() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/lcq").get();
+    return Boolean(snap.data()?.completed);
+  },
+  async setCompleted(completed) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/lcq")
+      .set({ completed, updatedAt: Date.now() }, { merge: true });
+  },
+};
+
 const firestoreStore: Store = {
+  lcq: firestoreLcqStore,
   async getResults() {
     const db = await firestoreDb();
     const snap = await db.doc("bracket/state").get();
@@ -147,6 +252,17 @@ interface FileDb {
   lockedManually?: boolean;
   pot?: number;
   completed?: boolean;
+  lcq?: {
+    results: LcqDecided;
+    submissions: Record<string, LcqSubmission>;
+    lockedManually?: boolean;
+    pot?: number;
+    completed?: boolean;
+  };
+}
+
+function lcqSection(db: FileDb): NonNullable<FileDb["lcq"]> {
+  return (db.lcq ??= { results: {}, submissions: {} });
 }
 
 async function readFileDb(): Promise<FileDb> {
@@ -162,7 +278,68 @@ async function writeFileDb(db: FileDb): Promise<void> {
   await fs.writeFile(DB_PATH, JSON.stringify(db, null, 2));
 }
 
+const fileLcqStore: LcqStore = {
+  async getResults() {
+    return lcqSection(await readFileDb()).results;
+  },
+  async setResults(results) {
+    const db = await readFileDb();
+    lcqSection(db).results = results;
+    await writeFileDb(db);
+  },
+  async getManualLock() {
+    return Boolean(lcqSection(await readFileDb()).lockedManually);
+  },
+  async setManualLock(locked) {
+    const db = await readFileDb();
+    lcqSection(db).lockedManually = locked;
+    await writeFileDb(db);
+  },
+  async getSubmissions() {
+    const lcq = lcqSection(await readFileDb());
+    return Object.entries(lcq.submissions).map(([id, sub]) => ({ id, ...sub }));
+  },
+  async addSubmission(id, sub) {
+    const db = await readFileDb();
+    const lcq = lcqSection(db);
+    if (lcq.submissions[id]) return false;
+    lcq.submissions[id] = sub;
+    await writeFileDb(db);
+    return true;
+  },
+  async deleteSubmission(id) {
+    const db = await readFileDb();
+    delete lcqSection(db).submissions[id];
+    await writeFileDb(db);
+  },
+  async setPaid(id, paid) {
+    const db = await readFileDb();
+    const lcq = lcqSection(db);
+    if (!lcq.submissions[id]) return;
+    lcq.submissions[id].paid = paid;
+    await writeFileDb(db);
+  },
+  async getPot() {
+    const lcq = lcqSection(await readFileDb());
+    return typeof lcq.pot === "number" ? lcq.pot : LCQ_BASE_POT;
+  },
+  async setPot(amount) {
+    const db = await readFileDb();
+    lcqSection(db).pot = amount;
+    await writeFileDb(db);
+  },
+  async getCompleted() {
+    return Boolean(lcqSection(await readFileDb()).completed);
+  },
+  async setCompleted(completed) {
+    const db = await readFileDb();
+    lcqSection(db).completed = completed;
+    await writeFileDb(db);
+  },
+};
+
 const fileStore: Store = {
+  lcq: fileLcqStore,
   async getResults() {
     return (await readFileDb()).results;
   },

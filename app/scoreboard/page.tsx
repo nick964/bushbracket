@@ -53,6 +53,12 @@ export default function ScoreboardPage() {
             >
               ← Bracket
             </Link>
+            <Link
+              href="/lcq"
+              className="label-caps mt-1 shrink-0 border border-white/15 bg-black/40 px-3 py-2 text-zinc-300 transition-colors hover:border-orange-500 hover:text-orange-400"
+            >
+              LCQ →
+            </Link>
             <AuthControls />
           </span>
         </div>
