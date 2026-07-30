@@ -33,19 +33,25 @@ export default function LcqPotBanner({ pot }: { pot: number }) {
           ))}
         </div>
       </div>
-      <div className="mt-2 border border-white/10 bg-black/40 px-4 py-3">
-        <p className="text-sm font-bold uppercase tracking-widest text-zinc-200">
-          Rules of Engagement · ${BUY_IN} buy-in · Venmo{" "}
-          <a
-            href={`https://venmo.com/u/${VENMO_HANDLE}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-orange-400 underline hover:text-orange-300"
-          >
-            @{VENMO_HANDLE}
-          </a>
-        </p>
-        <ul className="mt-2 list-disc space-y-1 pl-4 text-sm text-zinc-300">
+      {/* Collapsed by default so the bracket is the first thing people see */}
+      <details className="group mt-2 border border-white/10 bg-black/40">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+          <span className="text-sm font-bold uppercase tracking-widest text-zinc-200">
+            Rules of Engagement · ${BUY_IN} buy-in · Venmo{" "}
+            <a
+              href={`https://venmo.com/u/${VENMO_HANDLE}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-orange-400 underline hover:text-orange-300"
+            >
+              @{VENMO_HANDLE}
+            </a>
+          </span>
+          <span className="shrink-0 text-orange-400 transition-transform group-open:rotate-90">
+            ▸
+          </span>
+        </summary>
+        <ul className="list-disc space-y-1 border-t border-white/10 px-4 pt-2 pb-3 pl-8 text-sm text-zinc-300">
           <li>
             Entering is free — everyone plays for bragging rights on the
             leaderboard.
@@ -60,7 +66,7 @@ export default function LcqPotBanner({ pot }: { pot: number }) {
             free player tops the board.
           </li>
         </ul>
-      </div>
+      </details>
     </div>
   );
 }

@@ -65,6 +65,28 @@ export default function TournamentBracket<G extends string, T extends string>({
 }: TournamentBracketProps<G, T>) {
   const participants = resolveParticipants(def, decided);
 
+  const card = (id: G) => (
+    <GameCard
+      key={id}
+      def={def}
+      teams={teams}
+      gameId={id}
+      slots={participants[id]}
+      winner={decided[id] ?? def.games[id].fixedResult?.winner}
+      qualifier={qualifierGames?.has(id)}
+      qualifierTitle={qualifierTitle}
+      gold={id === goldGame}
+      goldLabel={goldLabel}
+      onPick={onPick}
+      onClear={onClear}
+      actual={compare?.[id]}
+    />
+  );
+
+  // How many games in a round already have a winner (picked or fixed).
+  const doneCount = (games: G[]) =>
+    games.filter((id) => decided[id] ?? def.games[id].fixedResult).length;
+
   const renderColumns = (columns: Column<G>[]) => (
     <div className="flex min-w-max gap-3 sm:gap-4">
       {columns.map((col) => (
@@ -73,23 +95,7 @@ export default function TournamentBracket<G extends string, T extends string>({
             {col.title}
           </div>
           <div className="flex flex-1 flex-col justify-around gap-3">
-            {col.games.map((id) => (
-              <GameCard
-                key={id}
-                def={def}
-                teams={teams}
-                gameId={id}
-                slots={participants[id]}
-                winner={decided[id] ?? def.games[id].fixedResult?.winner}
-                qualifier={qualifierGames?.has(id)}
-                qualifierTitle={qualifierTitle}
-                gold={id === goldGame}
-                goldLabel={goldLabel}
-                onPick={onPick}
-                onClear={onClear}
-                actual={compare?.[id]}
-              />
-            ))}
+            {col.games.map(card)}
           </div>
         </div>
       ))}
@@ -97,29 +103,74 @@ export default function TournamentBracket<G extends string, T extends string>({
   );
 
   return (
-    <div className="overflow-x-auto pb-2">
-      <div className="space-y-10">
+    <>
+      {/* Desktop / tablet: classic side-by-side bracket, scrolls sideways */}
+      <div className="hidden overflow-x-auto pb-2 sm:block">
+        <div className="space-y-10">
+          {sections.map((section) => (
+            <div key={section.label} className="space-y-3">
+              <div className="min-w-max border-b border-white/10 pb-2">
+                <p className="label-caps text-orange-500">{section.phase}</p>
+                <h2 className="mt-1 font-display text-2xl font-bold uppercase tracking-tight text-zinc-100">
+                  {section.label}
+                </h2>
+              </div>
+              <p className="max-w-xl text-xs text-zinc-500">
+                {section.caption}
+              </p>
+              {section.rows.map((row, i) => (
+                <div key={i} className="space-y-1.5">
+                  {row.note && (
+                    <p className="label-caps text-zinc-600">↓ {row.note}</p>
+                  )}
+                  {renderColumns(row.columns)}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Phone: rounds stacked top-to-bottom, full-width cards, no
+          side-scrolling. Each round header shows its picked/total count. */}
+      <div className="space-y-8 sm:hidden">
         {sections.map((section) => (
-          <div key={section.label} className="space-y-3">
-            <div className="min-w-max border-b border-white/10 pb-2">
+          <div key={section.label} className="space-y-4">
+            <div className="border-b border-white/10 pb-2">
               <p className="label-caps text-orange-500">{section.phase}</p>
-              <h2 className="mt-1 font-display text-2xl font-bold uppercase tracking-tight text-zinc-100">
+              <h2 className="mt-1 font-display text-xl font-bold uppercase tracking-tight text-zinc-100">
                 {section.label}
               </h2>
+              <p className="mt-1 text-xs text-zinc-500">{section.caption}</p>
             </div>
-            <p className="max-w-xl text-xs text-zinc-500">{section.caption}</p>
             {section.rows.map((row, i) => (
-              <div key={i} className="space-y-1.5">
+              <div key={i} className="space-y-4">
                 {row.note && (
                   <p className="label-caps text-zinc-600">↓ {row.note}</p>
                 )}
-                {renderColumns(row.columns)}
+                {row.columns.map((col) => (
+                  <div key={col.title}>
+                    <div className="label-caps mb-2 flex items-center justify-between border border-white/10 bg-white/5 px-2.5 py-1.5 text-zinc-400">
+                      <span>{col.title}</span>
+                      <span
+                        className={
+                          doneCount(col.games) === col.games.length
+                            ? "text-emerald-400"
+                            : "text-zinc-600"
+                        }
+                      >
+                        {doneCount(col.games)}/{col.games.length}
+                      </span>
+                    </div>
+                    <div className="space-y-2">{col.games.map(card)}</div>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
 
