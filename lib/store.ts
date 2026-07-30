@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Decided, Submission } from "./logic";
 import type { LcqDecided, LcqSubmission } from "./lcq";
-import { BASE_POT, LCQ_BASE_POT } from "./pot";
+import { BASE_POT, BUY_IN, LCQ_BASE_POT } from "./pot";
 
 /** A submission plus its storage key (the submitter's Clerk user id). */
 export type StoredSubmission = Submission & { id: string };
@@ -29,6 +29,9 @@ export interface LcqStore {
   /** Current prize pot in whole dollars (defaults to LCQ_BASE_POT, i.e. $0). */
   getPot(): Promise<number>;
   setPot(amount: number): Promise<void>;
+  /** LCQ buy-in in whole dollars, adjustable by the admin (defaults to BUY_IN). */
+  getBuyIn(): Promise<number>;
+  setBuyIn(amount: number): Promise<void>;
   getCompleted(): Promise<boolean>;
   setCompleted(completed: boolean): Promise<void>;
 }
@@ -49,6 +52,9 @@ export interface Store {
   /** Current prize pot in whole dollars (defaults to BASE_POT). */
   getPot(): Promise<number>;
   setPot(amount: number): Promise<void>;
+  /** Admin-set flag hiding the pot banners on every page (EWC and LCQ). */
+  getPotsHidden(): Promise<boolean>;
+  setPotsHidden(hidden: boolean): Promise<void>;
   /** Admin-set flag: tournament is over, show the winners. */
   getCompleted(): Promise<boolean>;
   setCompleted(completed: boolean): Promise<void>;
@@ -149,6 +155,18 @@ const firestoreLcqStore: LcqStore = {
       .doc("bracket/lcq")
       .set({ pot: amount, updatedAt: Date.now() }, { merge: true });
   },
+  async getBuyIn() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/lcq").get();
+    const buyIn = snap.data()?.buyIn;
+    return typeof buyIn === "number" ? buyIn : BUY_IN;
+  },
+  async setBuyIn(amount) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/lcq")
+      .set({ buyIn: amount, updatedAt: Date.now() }, { merge: true });
+  },
   async getCompleted() {
     const db = await firestoreDb();
     const snap = await db.doc("bracket/lcq").get();
@@ -229,6 +247,17 @@ const firestoreStore: Store = {
       .doc("bracket/state")
       .set({ pot: amount, updatedAt: Date.now() }, { merge: true });
   },
+  async getPotsHidden() {
+    const db = await firestoreDb();
+    const snap = await db.doc("bracket/state").get();
+    return Boolean(snap.data()?.potsHidden);
+  },
+  async setPotsHidden(hidden) {
+    const db = await firestoreDb();
+    await db
+      .doc("bracket/state")
+      .set({ potsHidden: hidden, updatedAt: Date.now() }, { merge: true });
+  },
   async getCompleted() {
     const db = await firestoreDb();
     const snap = await db.doc("bracket/state").get();
@@ -251,12 +280,14 @@ interface FileDb {
   submissions: Record<string, Submission>;
   lockedManually?: boolean;
   pot?: number;
+  potsHidden?: boolean;
   completed?: boolean;
   lcq?: {
     results: LcqDecided;
     submissions: Record<string, LcqSubmission>;
     lockedManually?: boolean;
     pot?: number;
+    buyIn?: number;
     completed?: boolean;
   };
 }
@@ -328,6 +359,15 @@ const fileLcqStore: LcqStore = {
     lcqSection(db).pot = amount;
     await writeFileDb(db);
   },
+  async getBuyIn() {
+    const lcq = lcqSection(await readFileDb());
+    return typeof lcq.buyIn === "number" ? lcq.buyIn : BUY_IN;
+  },
+  async setBuyIn(amount) {
+    const db = await readFileDb();
+    lcqSection(db).buyIn = amount;
+    await writeFileDb(db);
+  },
   async getCompleted() {
     return Boolean(lcqSection(await readFileDb()).completed);
   },
@@ -385,6 +425,14 @@ const fileStore: Store = {
   async setPot(amount) {
     const db = await readFileDb();
     db.pot = amount;
+    await writeFileDb(db);
+  },
+  async getPotsHidden() {
+    return Boolean((await readFileDb()).potsHidden);
+  },
+  async setPotsHidden(hidden) {
+    const db = await readFileDb();
+    db.potsHidden = hidden;
     await writeFileDb(db);
   },
   async getCompleted() {

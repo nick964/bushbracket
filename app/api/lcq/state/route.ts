@@ -12,14 +12,19 @@ export const dynamic = "force-dynamic";
 // as `yours`.
 export async function GET() {
   const { userId } = await auth();
-  const lcq = getStore().lcq;
-  const [results, submissions, manualLock, pot, completed] = await Promise.all([
-    lcq.getResults(),
-    lcq.getSubmissions(),
-    lcq.getManualLock(),
-    lcq.getPot(),
-    lcq.getCompleted(),
-  ]);
+  const store = getStore();
+  const lcq = store.lcq;
+  // potsHidden is a single site-wide flag stored with the main event
+  const [results, submissions, manualLock, pot, buyIn, potsHidden, completed] =
+    await Promise.all([
+      lcq.getResults(),
+      lcq.getSubmissions(),
+      lcq.getManualLock(),
+      lcq.getPot(),
+      lcq.getBuyIn(),
+      store.getPotsHidden(),
+      lcq.getCompleted(),
+    ]);
 
   const publicResults = predictableOnly(LCQ_DEF, results);
   const locked =
@@ -39,6 +44,8 @@ export async function GET() {
     manualLock,
     completed,
     pot,
+    buyIn,
+    potsHidden,
     results: publicResults,
     yours: mine
       ? { name: mine.name, picks: mine.picks, createdAt: mine.createdAt }

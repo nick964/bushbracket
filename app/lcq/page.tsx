@@ -24,6 +24,8 @@ interface LcqState {
   locked: boolean;
   completed: boolean;
   pot: number;
+  buyIn: number;
+  potsHidden: boolean;
   results: LcqDecided;
   /** The signed-in caller's own submission, if they've made one. */
   yours: LcqSubmission | null;
@@ -81,9 +83,12 @@ export default function LcqPage() {
             Jul 31 – Aug 2 · 16 teams · Double elimination · Winner reaches the
             EWC
           </p>
-          <p className="mt-2 text-xs text-zinc-500">
-            Free to enter — throw in $5 if you want in on the buy-in pot.
-          </p>
+          {state && !state.potsHidden && (
+            <p className="mt-2 text-xs text-zinc-500">
+              Free to enter — throw in ${state.buyIn} if you want in on the
+              buy-in pot.
+            </p>
+          )}
         </div>
         <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-zinc-600">
           {Object.values(LCQ_TEAMS).map((t) => (
@@ -108,7 +113,9 @@ export default function LcqPage() {
           {state.completed && state.locked ? (
             <ChampBanner state={state} />
           ) : (
-            <LcqPotBanner pot={state.pot} />
+            !state.potsHidden && (
+              <LcqPotBanner pot={state.pot} buyIn={state.buyIn} />
+            )
           )}
           {state.locked ? (
             <LockedView state={state} />

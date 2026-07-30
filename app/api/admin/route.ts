@@ -24,6 +24,9 @@ interface AdminBody {
     | "unlock"
     | "set-pot"
     | "set-paid"
+    | "set-buy-in"
+    | "hide-pots"
+    | "show-pots"
     | "complete"
     | "uncomplete";
   gameId?: string;
@@ -65,6 +68,19 @@ async function handleLcq(body: AdminBody): Promise<Response> {
     }
     await lcq.setPaid(id, Boolean(body.paid));
     return Response.json({ ok: true });
+  }
+
+  if (body.action === "set-buy-in") {
+    const amount = body.amount;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 1) {
+      return Response.json(
+        { error: "Buy-in must be at least $1" },
+        { status: 400 }
+      );
+    }
+    const buyIn = Math.round(amount);
+    await lcq.setBuyIn(buyIn);
+    return Response.json({ ok: true, buyIn });
   }
 
   if (body.action === "set-pot") {
@@ -151,6 +167,13 @@ export async function POST(request: Request) {
 
   if (body.action === "login") {
     return Response.json({ ok: true });
+  }
+
+  // Site-wide flag (covers both tournaments), so handled before the lcq branch
+  if (body.action === "hide-pots" || body.action === "show-pots") {
+    const potsHidden = body.action === "hide-pots";
+    await getStore().setPotsHidden(potsHidden);
+    return Response.json({ ok: true, potsHidden });
   }
 
   if (body.tournament === "lcq") {

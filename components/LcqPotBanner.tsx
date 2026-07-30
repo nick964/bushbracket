@@ -1,11 +1,18 @@
-import { BUY_IN, VENMO_HANDLE } from "@/lib/pot";
+import { VENMO_HANDLE } from "@/lib/pot";
 
 // LCQ prize pot + payout rules, shown at the top of the /lcq page. Unlike the
 // main event there's no organizer seed money: the pot starts at $0 and is
 // purely buy-ins, so there's a single pot card instead of paid/free ones.
-export default function LcqPotBanner({ pot }: { pot: number }) {
+// The buy-in amount is admin-adjustable (stored server-side), not a constant.
+export default function LcqPotBanner({
+  pot,
+  buyIn,
+}: {
+  pot: number;
+  buyIn: number;
+}) {
   // Segmented HUD bar: one block lights up per buy-in received
-  const buyIns = Math.max(0, Math.round(pot / BUY_IN));
+  const buyIns = buyIn > 0 ? Math.max(0, Math.round(pot / buyIn)) : 0;
   const SEGMENTS = 8;
 
   return (
@@ -37,7 +44,7 @@ export default function LcqPotBanner({ pot }: { pot: number }) {
       <details className="group mt-2 border border-white/10 bg-black/40">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
           <span className="text-sm font-bold uppercase tracking-widest text-zinc-200">
-            Rules of Engagement · ${BUY_IN} buy-in · Venmo{" "}
+            Rules of Engagement · ${buyIn} buy-in · Venmo{" "}
             <a
               href={`https://venmo.com/u/${VENMO_HANDLE}`}
               target="_blank"
@@ -57,7 +64,7 @@ export default function LcqPotBanner({ pot }: { pot: number }) {
             leaderboard.
           </li>
           <li>
-            Want money on it? Throw in ${BUY_IN} and you&rsquo;re in the pot.
+            Want money on it? Throw in ${buyIn} and you&rsquo;re in the pot.
             Nobody&rsquo;s seeding this one, so it starts at $0 and is buy-ins
             all the way — it grows as players join.
           </li>

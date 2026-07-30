@@ -60,7 +60,7 @@ export default function AdminPage() {
         />
       ) : (
         <>
-          <div className="mb-5 flex gap-2">
+          <div className="mb-5 flex flex-wrap items-center gap-2">
             {(
               [
                 ["ewc", "EWC Main Event"],
@@ -79,6 +79,10 @@ export default function AdminPage() {
                 {label}
               </button>
             ))}
+            <PotsVisibilityToggle
+              password={password}
+              onAuthFailure={onAuthFailure}
+            />
           </div>
           {tournament === "ewc" ? (
             <ResultsEditor password={password} onAuthFailure={onAuthFailure} />
@@ -88,6 +92,80 @@ export default function AdminPage() {
         </>
       )}
     </main>
+  );
+}
+
+// Site-wide switch: hides the pot banners on the public pages (both EWC and
+// LCQ). Defaults to shown.
+function PotsVisibilityToggle({
+  password,
+  onAuthFailure,
+}: {
+  password: string;
+  onAuthFailure: () => void;
+}) {
+  const [potsHidden, setPotsHidden] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/state", { cache: "no-store" });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if (!cancelled) setPotsHidden(Boolean(data.potsHidden));
+      } catch {
+        // leave the toggle unloaded; the tabs still work
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggle = async () => {
+    if (potsHidden === null) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password,
+          action: potsHidden ? "show-pots" : "hide-pots",
+        }),
+      });
+      if (res.status === 401) {
+        onAuthFailure();
+        return;
+      }
+      const data = await res.json();
+      if (res.ok && data.potsHidden !== undefined) {
+        setPotsHidden(data.potsHidden);
+      }
+    } catch {
+      // keep the previous state on network errors
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (potsHidden === null) return null;
+
+  return (
+    <button
+      onClick={toggle}
+      disabled={busy}
+      title="Show or hide the pot banners on the public pages (both tournaments)"
+      className={`ml-auto rounded px-3 py-2 font-display text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 ${
+        potsHidden
+          ? "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+          : "bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30"
+      }`}
+    >
+      {potsHidden ? "🙈 Pots hidden — show" : "💰 Pots shown — hide"}
+    </button>
   );
 }
 
@@ -497,6 +575,8 @@ function LcqEditor({
   const [completed, setCompleted] = useState(false);
   const [pot, setPot] = useState(0);
   const [potDraft, setPotDraft] = useState("");
+  const [buyIn, setBuyIn] = useState(0);
+  const [buyInDraft, setBuyInDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -510,6 +590,8 @@ function LcqEditor({
       setCompleted(Boolean(data.completed));
       setPot(data.pot);
       setPotDraft(String(data.pot));
+      setBuyIn(data.buyIn);
+      setBuyInDraft(String(data.buyIn));
     } catch {
       setError("Couldn't load current results — refresh the page");
     }
@@ -545,6 +627,10 @@ function LcqEditor({
       if (data.pot !== undefined) {
         setPot(data.pot);
         setPotDraft(String(data.pot));
+      }
+      if (data.buyIn !== undefined) {
+        setBuyIn(data.buyIn);
+        setBuyInDraft(String(data.buyIn));
       }
     } catch {
       setError("Network error — the result was NOT saved. Try again.");
@@ -633,7 +719,42 @@ function LcqEditor({
           Update pot
         </button>
         <span className="text-xs text-zinc-500">
-          Buy-ins only — starts at $0, bump it +$5 as each Venmo lands.
+          Buy-ins only — starts at $0, bump it +${buyIn} as each Venmo lands.
+        </span>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-emerald-900/60 bg-emerald-950/20 px-4 py-3 text-sm">
+        <span className="font-display font-semibold uppercase tracking-wider text-emerald-300">
+          🎟️ LCQ buy-in: ${buyIn}
+        </span>
+        <span className="flex items-center gap-1 text-zinc-300">
+          $
+          <input
+            type="number"
+            min={1}
+            value={buyInDraft}
+            onChange={(e) => setBuyInDraft(e.target.value)}
+            className="w-20 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-sm text-zinc-100 outline-none focus:border-emerald-500"
+          />
+        </span>
+        <button
+          onClick={() =>
+            mutate({ action: "set-buy-in", amount: Number(buyInDraft) })
+          }
+          disabled={
+            busy ||
+            buyInDraft.trim() === "" ||
+            !Number.isFinite(Number(buyInDraft)) ||
+            Number(buyInDraft) < 1 ||
+            Math.round(Number(buyInDraft)) === buyIn
+          }
+          className="rounded bg-emerald-600 px-3 py-1 font-display text-xs font-bold uppercase tracking-wider text-black transition-colors hover:bg-emerald-500 disabled:opacity-50"
+        >
+          Update buy-in
+        </button>
+        <span className="text-xs text-zinc-500">
+          What each player pays to enter the LCQ pot — shown on the public
+          page.
         </span>
       </div>
 

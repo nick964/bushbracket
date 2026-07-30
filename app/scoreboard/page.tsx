@@ -12,6 +12,7 @@ interface AppState {
   locked: boolean;
   completed: boolean;
   pot: number;
+  potsHidden: boolean;
   results: Decided;
   submissions: Array<Submission | { name: string; paid?: boolean }>;
 }
@@ -94,7 +95,7 @@ export default function ScoreboardPage() {
               results={state.results}
             />
           ) : (
-            <PotBanner pot={state.pot} />
+            !state.potsHidden && <PotBanner pot={state.pot} />
           )}
           {state.locked ? (
             <ScoreboardPanel

@@ -11,13 +11,15 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const { userId } = await auth();
   const store = getStore();
-  const [results, submissions, manualLock, pot, completed] = await Promise.all([
-    store.getResults(),
-    store.getSubmissions(),
-    store.getManualLock(),
-    store.getPot(),
-    store.getCompleted(),
-  ]);
+  const [results, submissions, manualLock, pot, potsHidden, completed] =
+    await Promise.all([
+      store.getResults(),
+      store.getSubmissions(),
+      store.getManualLock(),
+      store.getPot(),
+      store.getPotsHidden(),
+      store.getCompleted(),
+    ]);
 
   const publicResults = predictableOnly(results);
   const locked =
@@ -37,6 +39,7 @@ export async function GET() {
     manualLock,
     completed,
     pot,
+    potsHidden,
     results: publicResults,
     yours: mine
       ? { name: mine.name, picks: mine.picks, createdAt: mine.createdAt }

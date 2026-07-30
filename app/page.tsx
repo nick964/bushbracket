@@ -21,6 +21,7 @@ interface AppState {
   locked: boolean;
   completed: boolean;
   pot: number;
+  potsHidden: boolean;
   results: Decided;
   /** The signed-in caller's own submission, if they've made one. */
   yours: Submission | null;
@@ -113,7 +114,7 @@ export default function Home() {
               results={state.results}
             />
           ) : (
-            <PotBanner pot={state.pot} />
+            !state.potsHidden && <PotBanner pot={state.pot} />
           )}
           {state.locked ? (
             <LockedView state={state} />
